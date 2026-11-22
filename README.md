@@ -1,4 +1,4 @@
-# Mikasa (三笠) — Inkling-2 Mini Inference Engine
+# Mikasa — Inkling-2 Mini Inference Engine
 
 A single-file-stack CUDA inference engine for Inkling-2 Mini on the RTX 3090 (sm_86).
 It memory-maps the GGUF model (`unsloth/Inkling-2-Mini-GGUF`, `Inkling-2-Mini-UD-Q4_K_XL.gguf`)
