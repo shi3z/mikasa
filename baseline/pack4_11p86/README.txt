@@ -1,0 +1,1 @@
+row-packed NVFP4 expert GEMV (nvfp4_gemv_pack4, 4 rows/warp, nibble LUT, arithmetic UE4M3): 11.86 ms/token (84.3 tok/s), was 12.35 ms with ctrl_fused_12p40. 128 tokens identical to reference; logits max|diff| 7.6e-6 vs reference (same as 12.40 build).

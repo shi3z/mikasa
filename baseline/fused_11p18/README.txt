@@ -1,0 +1,1 @@
+Fused small-kernel build: removes control/stage/inp_sa D2D copies; fuses mix (2 kernels), conv+residual, K/V conv pair. 11.18 ms/token (89.4 tok/s) vs 11.86 (pack4_11p86). 128 tokens identical; logits max|diff| 7.6e-6 vs reference. Rejected inside: fused control RMS+row8 GEMV (+0.4 ms).
