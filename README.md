@@ -1,38 +1,39 @@
-# 三笠 (Mikasa) — Inkling-2 Mini 推論エンジン (RTX 3090 / sm_86)
+# Mikasa (三笠) — Inkling-2 Mini Inference Engine
 
-単一 CUDA 実装の Inkling-2 Mini 推論エンジンです。`unsloth/Inkling-2-Mini-GGUF` の
-`Inkling-2-Mini-UD-Q4_K_XL.gguf` を mmap で読み、decode 1 トークンを 1 つの CUDA Graph で実行します。
-llama.cpp は参照（ロジットと中間値の比較）にのみ使い、実行時には使いません。
+A single-file-stack CUDA inference engine for Inkling-2 Mini on the RTX 3090 (sm_86).
+It memory-maps the GGUF model (`unsloth/Inkling-2-Mini-GGUF`, `Inkling-2-Mini-UD-Q4_K_XL.gguf`)
+and runs each decode step as one CUDA Graph. llama.cpp is used only as a numerical reference
+(logits and intermediate tensors); it is not used at runtime.
 
-## 現状
+## Status
 
-| 版 | ms/token | tok/s | 備考 |
+| Version | ms/token | tok/s | Notes |
 |---|---:|---:|---|
-| 初期 CUDA Graph 版 | 14.09 | 71 | |
+| Initial CUDA Graph build | 14.09 | 71 | |
 | `baseline/ctrl_fused_12p40` | 12.40 | 80.6 | |
-| `baseline/pack4_11p86` | 11.86 | 84.3 | NVFP4 expert GEMV の行パック化 |
-| `baseline/fused_11p18` | 11.18 | 89.4 | D2D コピー削除・mix/conv 融合 |
-| `baseline/small_kernel_9p85` | **9.80〜9.87** | **101〜102** | 小カーネル融合・register 常駐 RMS |
+| `baseline/pack4_11p86` | 11.86 | 84.3 | NVFP4 expert GEMV row-packing |
+| `baseline/fused_11p18` | 11.18 | 89.4 | D2D copy removal, mix/conv fusion |
+| `baseline/small_kernel_9p85` | **9.80–9.87** | **101–102** | Small-kernel fusion, register-resident RMS |
 
-計測: `--gen 128 --reps 5`（RTX 3090、CUDA Graph 再生）。
-128 トークン生成は参照出力と完全一致、logits は参照との最大差 7.6e-6、argmax は全位置一致。
+Measured with `--gen 128 --reps 5` (RTX 3090, CUDA Graph replay).
+The 128-token greedy output matches the reference exactly. Logits differ from the reference by at most 7.6e-6, and the argmax matches at every position.
 
-## 構成
+## Layout
 
-- `src/gguf.{hpp,cpp}`: GGUF v3 パーサ（mmap）
-- `src/kernels_common.cuh`: 全カーネル（NVFP4 / Q8_0 / F32 / BF16 GEMV、RMS、mix、conv、attention、loop control）
-- `src/inkling_model.cu`: モデル本体、`forward_token`、CUDA Graph 構築、`main`
-- `src/*_bench.cu`, `src/nvfp4_*.cu`, `src/moe_sched.cu`: マイクロベンチマーク（各 GEMV 方式の比較）
-- `ref/`: llama.cpp 参照用のダンパ（`dump_nodes.cpp`）と numpy リファレンス
-- `baseline/`: 各段階のスナップショット（ソースと README）
-- `DESIGN.md`: 設計メモ
+- `src/gguf.{hpp,cpp}`: GGUF v3 parser (mmap)
+- `src/kernels_common.cuh`: all kernels (NVFP4 / Q8_0 / F32 / BF16 GEMV, RMS norm, mix, conv, attention, loop control)
+- `src/inkling_model.cu`: model, `forward_token`, CUDA Graph capture, `main`
+- `src/*_bench.cu`, `src/nvfp4_*.cu`, `src/moe_sched.cu`: microbenchmarks for the GEMV variants
+- `ref/`: llama.cpp reference dumper (`dump_nodes.cpp`) and numpy reference scripts
+- `baseline/`: snapshots of each stage (source and README)
+- `DESIGN.md`: design notes
 
-## ビルド・実行
+## Build and run
 
 ```sh
 nvcc -O3 -std=c++17 -arch=sm_86 -I src -o mikasa src/inkling_model.cu src/gguf.cpp
-./mikasa Inkling-2-Mini-UD-Q4_K_XL.gguf out_dir --gen 128 --reps 5   # 生成と計測
-./mikasa Inkling-2-Mini-UD-Q4_K_XL.gguf out_dir --dump               # logits.bin を書き出し
+./mikasa Inkling-2-Mini-UD-Q4_K_XL.gguf out_dir --gen 128 --reps 5   # generate and time
+./mikasa Inkling-2-Mini-UD-Q4_K_XL.gguf out_dir --dump               # write logits.bin
 ```
 
-モデルファイルはリポジトリに含みません。
+The model file is not included in this repository.
