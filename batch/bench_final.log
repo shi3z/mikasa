@@ -1,0 +1,15 @@
+loaded model to GPU
+bench at position 300 (context filled with real tokens)
+forward_token (graph, B=1 reference): 12.253 ms/token
+   B      ms/call     ms/token    speedup
+   1       13.185       13.185      1.00x
+   2       14.155        7.077      1.86x
+   4       17.126        4.282      3.08x
+   8       27.248        3.406      3.87x
+  16       48.450        3.028      4.35x
+multi-sequence decode (S sequences x 1 token per step, own positions/KV/state; context 300 tokens each)
+   S      ms/step      agg tok/s     vs 1-seq
+   1       13.195           75.8        1.00x
+   2       15.605          128.2        1.69x
+   3       19.132          156.8        2.07x
+   4       20.240          197.6        2.61x

@@ -3,6 +3,7 @@
 // Writes l_out-<il>.bin ([T][E]) and logits.bin ([T][200058]) to outdir.
 #include "gguf.hpp"
 #include "kernels_common.cuh"
+#include "batch_kernels2.cuh"
 
 #include <cuda_runtime.h>
 
@@ -534,12 +535,16 @@ static void set_pos_tok(Engine & g, int pos, int tok, cudaStream_t s) {
     CHECK(cudaMemcpyAsync(g.tok_dev, &tok, sizeof(int), cudaMemcpyHostToDevice, s));
 }
 
+#include "batch_host.inc"
+
 int main(int argc, char ** argv) {
     if (argc < 3) { std::fprintf(stderr, "usage: inkling_model model.gguf outdir [--tokens a,b] [--gen N] [--reps N] [--dump]\n"); return 2; }
     const std::string outdir = argv[2];
     std::vector<int> toks = {371, 151451, 149879, 151194, 149884};
     int gen = 0, reps = 0;
-    bool dump = false;
+    bool dump = false, batch_test = false, batch_bench = false;
+    std::string probe = "/tmp/claude-1000/-home-fuzokunagaoka-rrr/3bddbe8c-f3c7-483a-b598-067efc7277e7/scratchpad/probe";
+    int bench_b = 0, bench_pos = 300;
     for (int i = 3; i < argc; ++i) {
         if (std::strcmp(argv[i], "--tokens") == 0 && i + 1 < argc) {
             toks.clear();
@@ -549,6 +554,11 @@ int main(int argc, char ** argv) {
         } else if (std::strcmp(argv[i], "--gen") == 0 && i + 1 < argc) gen = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--reps") == 0 && i + 1 < argc) reps = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--dump") == 0) dump = true;
+        else if (std::strcmp(argv[i], "--batch-test") == 0) batch_test = true;
+        else if (std::strcmp(argv[i], "--batch-bench") == 0) batch_bench = true;
+        else if (std::strcmp(argv[i], "--probe") == 0 && i + 1 < argc) probe = argv[++i];
+        else if (std::strcmp(argv[i], "--bench-b") == 0 && i + 1 < argc) bench_b = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--bench-pos") == 0 && i + 1 < argc) bench_pos = std::atoi(argv[++i]);
     }
     const int P = (int) toks.size();
     mkdir(outdir.c_str(), 0755);
@@ -561,6 +571,8 @@ int main(int argc, char ** argv) {
     std::printf("loaded model to GPU\n");
     cudaStream_t s;
     CHECK(cudaStreamCreate(&s));
+    if (batch_test) return run_batch_test(g, probe, s);
+    if (batch_bench) return run_batch_bench(g, probe, s, bench_b, bench_pos);
 
     // one graph for every step: forward + argmax (position and token come from device memory)
     Dumper none;

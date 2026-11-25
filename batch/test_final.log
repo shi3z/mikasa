@@ -1,0 +1,62 @@
+loaded model to GPU
+== sequence 1: 326 tokens
+  sequential reference done (3.7 s)
+  chunks B=1 : positions 326  max abs diff 8.917e-05  max rel diff 3.382e-06  argmax mismatches 0
+  chunks B=2 : positions 326  max abs diff 8.917e-05  max rel diff 3.382e-06  argmax mismatches 0
+  chunks B=4 : positions 326  max abs diff 8.917e-05  max rel diff 3.382e-06  argmax mismatches 0
+  chunks B=8 : positions 326  max abs diff 8.917e-05  max rel diff 3.382e-06  argmax mismatches 0
+  chunks B=16: positions 326  max abs diff 8.917e-05  max rel diff 3.382e-06  argmax mismatches 0
+  rollback p=40  j=0: batch prefix logits (0 pos) abs 0.000e+00 rel 0.000e+00 | continuation (10 pos) abs 1.335e-05 rel 4.750e-07, argmax mismatches 0
+  rollback p=40  j=3: batch prefix logits (3 pos) abs 1.431e-05 rel 5.939e-07 | continuation (10 pos) abs 1.526e-05 rel 5.518e-07, argmax mismatches 0
+  rollback p=40  j=8: batch prefix logits (8 pos) abs 1.431e-05 rel 5.939e-07 | continuation (10 pos) abs 1.383e-05 rel 5.031e-07, argmax mismatches 0
+  rollback p=120 j=0: batch prefix logits (0 pos) abs 0.000e+00 rel 0.000e+00 | continuation (10 pos) abs 1.717e-05 rel 7.317e-07, argmax mismatches 0
+  rollback p=120 j=3: batch prefix logits (3 pos) abs 1.383e-05 rel 4.826e-07 | continuation (10 pos) abs 2.098e-05 rel 7.747e-07, argmax mismatches 0
+  rollback p=120 j=8: batch prefix logits (8 pos) abs 1.526e-05 rel 5.327e-07 | continuation (10 pos) abs 1.717e-05 rel 6.705e-07, argmax mismatches 0
+  rollback p=200 j=0: batch prefix logits (0 pos) abs 0.000e+00 rel 0.000e+00 | continuation (10 pos) abs 1.335e-05 rel 5.428e-07, argmax mismatches 0
+  rollback p=200 j=3: batch prefix logits (3 pos) abs 1.144e-05 rel 4.152e-07 | continuation (10 pos) abs 1.907e-05 rel 8.142e-07, argmax mismatches 0
+  rollback p=200 j=8: batch prefix logits (8 pos) abs 1.526e-05 rel 5.260e-07 | continuation (10 pos) abs 1.621e-05 rel 7.143e-07, argmax mismatches 0
+== sequence 2: 336 tokens
+  sequential reference done (3.8 s)
+  chunks B=1 : positions 336  max abs diff 6.676e-05  max rel diff 2.526e-06  argmax mismatches 0
+  chunks B=2 : positions 336  max abs diff 6.676e-05  max rel diff 2.526e-06  argmax mismatches 0
+  chunks B=4 : positions 336  max abs diff 6.676e-05  max rel diff 2.526e-06  argmax mismatches 0
+  chunks B=8 : positions 336  max abs diff 6.676e-05  max rel diff 2.526e-06  argmax mismatches 0
+  chunks B=16: positions 336  max abs diff 6.676e-05  max rel diff 2.526e-06  argmax mismatches 0
+  rollback p=40  j=0: batch prefix logits (0 pos) abs 0.000e+00 rel 0.000e+00 | continuation (10 pos) abs 1.764e-05 rel 6.520e-07, argmax mismatches 0
+  rollback p=40  j=3: batch prefix logits (3 pos) abs 1.717e-05 rel 5.988e-07 | continuation (10 pos) abs 1.526e-05 rel 5.537e-07, argmax mismatches 0
+  rollback p=40  j=8: batch prefix logits (8 pos) abs 1.717e-05 rel 5.988e-07 | continuation (10 pos) abs 1.431e-05 rel 4.897e-07, argmax mismatches 0
+  rollback p=120 j=0: batch prefix logits (0 pos) abs 0.000e+00 rel 0.000e+00 | continuation (10 pos) abs 1.335e-05 rel 4.734e-07, argmax mismatches 0
+  rollback p=120 j=3: batch prefix logits (3 pos) abs 1.335e-05 rel 4.855e-07 | continuation (10 pos) abs 1.144e-05 rel 3.999e-07, argmax mismatches 0
+  rollback p=120 j=8: batch prefix logits (8 pos) abs 1.335e-05 rel 4.855e-07 | continuation (10 pos) abs 1.383e-05 rel 4.884e-07, argmax mismatches 0
+  rollback p=200 j=0: batch prefix logits (0 pos) abs 0.000e+00 rel 0.000e+00 | continuation (10 pos) abs 1.526e-05 rel 5.586e-07, argmax mismatches 0
+  rollback p=200 j=3: batch prefix logits (3 pos) abs 1.907e-05 rel 6.697e-07 | continuation (10 pos) abs 1.144e-05 rel 4.189e-07, argmax mismatches 0
+  rollback p=200 j=8: batch prefix logits (8 pos) abs 1.907e-05 rel 6.697e-07 | continuation (10 pos) abs 1.526e-05 rel 5.320e-07, argmax mismatches 0
+== sequence 3: 357 tokens
+  sequential reference done (4.1 s)
+  chunks B=1 : positions 357  max abs diff 8.631e-05  max rel diff 3.120e-06  argmax mismatches 0
+  chunks B=2 : positions 357  max abs diff 8.631e-05  max rel diff 3.120e-06  argmax mismatches 0
+  chunks B=4 : positions 357  max abs diff 8.631e-05  max rel diff 3.120e-06  argmax mismatches 0
+  chunks B=8 : positions 357  max abs diff 8.631e-05  max rel diff 3.120e-06  argmax mismatches 0
+  chunks B=16: positions 357  max abs diff 8.631e-05  max rel diff 3.120e-06  argmax mismatches 0
+  rollback p=40  j=0: batch prefix logits (0 pos) abs 0.000e+00 rel 0.000e+00 | continuation (10 pos) abs 1.144e-05 rel 5.755e-07, argmax mismatches 0
+  rollback p=40  j=3: batch prefix logits (3 pos) abs 1.240e-05 rel 5.259e-07 | continuation (10 pos) abs 1.287e-05 rel 6.567e-07, argmax mismatches 0
+  rollback p=40  j=8: batch prefix logits (8 pos) abs 1.240e-05 rel 5.995e-07 | continuation (10 pos) abs 1.526e-05 rel 5.986e-07, argmax mismatches 0
+  rollback p=120 j=0: batch prefix logits (0 pos) abs 0.000e+00 rel 0.000e+00 | continuation (10 pos) abs 1.431e-05 rel 4.968e-07, argmax mismatches 0
+  rollback p=120 j=3: batch prefix logits (3 pos) abs 1.335e-05 rel 4.680e-07 | continuation (10 pos) abs 1.526e-05 rel 5.401e-07, argmax mismatches 0
+  rollback p=120 j=8: batch prefix logits (8 pos) abs 1.335e-05 rel 4.968e-07 | continuation (10 pos) abs 1.526e-05 rel 5.934e-07, argmax mismatches 0
+  rollback p=200 j=0: batch prefix logits (0 pos) abs 0.000e+00 rel 0.000e+00 | continuation (10 pos) abs 1.335e-05 rel 5.152e-07, argmax mismatches 0
+  rollback p=200 j=3: batch prefix logits (3 pos) abs 1.335e-05 rel 4.913e-07 | continuation (10 pos) abs 1.431e-05 rel 5.044e-07, argmax mismatches 0
+  rollback p=200 j=8: batch prefix logits (8 pos) abs 1.335e-05 rel 4.913e-07 | continuation (10 pos) abs 1.526e-05 rel 5.672e-07, argmax mismatches 0
+== multi-sequence S=2 (steps with B=1..4 tokens: 70 296 0 0)
+  slot 0 (prompt file 1, start step 0): positions 326  max abs diff 8.917e-05  max rel diff 3.382e-06  argmax mismatches 0
+  slot 1 (prompt file 2, start step 30): positions 336  max abs diff 6.676e-05  max rel diff 2.526e-06  argmax mismatches 0
+== multi-sequence S=3 (steps with B=1..4 tokens: 91 80 256 0)
+  slot 0 (prompt file 1, start step 0): positions 326  max abs diff 8.917e-05  max rel diff 3.382e-06  argmax mismatches 0
+  slot 1 (prompt file 2, start step 30): positions 336  max abs diff 6.676e-05  max rel diff 2.526e-06  argmax mismatches 0
+  slot 2 (prompt file 3, start step 70): positions 357  max abs diff 8.631e-05  max rel diff 3.120e-06  argmax mismatches 0
+== multi-sequence S=4 (steps with B=1..4 tokens: 39 101 80 216)
+  slot 0 (prompt file 1, start step 0): positions 326  max abs diff 8.917e-05  max rel diff 3.382e-06  argmax mismatches 0
+  slot 1 (prompt file 2, start step 30): positions 336  max abs diff 6.676e-05  max rel diff 2.526e-06  argmax mismatches 0
+  slot 2 (prompt file 3, start step 70): positions 357  max abs diff 8.631e-05  max rel diff 3.120e-06  argmax mismatches 0
+  slot 3 (prompt file 1, start step 110): positions 326  max abs diff 8.917e-05  max rel diff 3.382e-06  argmax mismatches 0
+ORACLE TEST: argmax matches at every position

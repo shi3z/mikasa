@@ -38,6 +38,33 @@ the trace) and a fused variant (`profile/fused.cuh`: one kernel, last-block-done
 saving 51 us per token (0.46 %). Replacing the router with RT Core BVH traversal (Spectral-AI) is not worthwhile here: its best published latency (19.1 us per batch on an RTX 5070 Ti)
 is above the current 8.5 us per application, and a distilled BVH router matches the original top-8 only ~96.6 % of the time. These numbers come from one profiling run.
 
+## Batched forward and parallel requests (`forward_batch`, A6000)
+
+`forward_batch` (in `src/batch_host.inc`, kernels in `src/batch_kernels*.cuh`) runs B tokens in one pass and shares the weight reads: either B consecutive tokens of one sequence
+(prefill, speculative-decoding verification, with `batch_rollback(j)` for rejected drafts) or one token each of up to 4 different sequences (parallel requests, own KV cache and conv state per slot).
+Validated against sequential `forward_token` (`./mikasa model out --batch-test`): argmax identical at every position of three 326-357 token sequences, max abs logit diff 9e-5, rollback and 2-4 sequence modes included.
+`forward_token` and the default decode path are unchanged (128 generated tokens identical). Details, design notes and caveats: [`batch/RESULTS.md`](batch/RESULTS.md).
+
+| same sequence, B tokens | ms per call | ms per token |
+|---|---:|---:|
+| 1 | 13.19 | 13.19 |
+| 4 | 17.13 | 4.28 |
+| 8 | 27.25 | 3.41 |
+| 16 | 48.45 | 3.03 |
+
+| parallel sequences | ms per step | aggregate tok/s |
+|---|---:|---:|
+| 1 | 13.20 | 75.8 |
+| 2 | 15.61 | 128.2 |
+| 4 | 20.24 | 197.6 |
+
+Limits today: context is still MAXT = 1024 positions per sequence; the batch path keeps a second, interleaved copy of the weights (GPU use ~36 GB); one token per sequence per step in multi-sequence mode.
+
+## OpenAI-compatible front end (`server/`)
+
+`server/chatfmt.py` renders the official chat template and parses the model's output stream into `reasoning_content`, `content` and streamed `tool_calls`;
+`server/mikasa_server.py` serves `/v1/chat/completions` (stream or not) with an engine adapter (`server/engines.py`). Only a mock engine is wired up so far (protocol tests against the harness client); the real engine adapter is not written yet.
+
 ## Layout
 
 - `src/gguf.{hpp,cpp}`: GGUF v3 parser (mmap)
