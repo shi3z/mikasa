@@ -383,6 +383,15 @@ __device__ __forceinline__ float ue4m3_arith(uint32_t x) {
     return (x == 0x7F) ? 0.0f : (e ? norm : sub);
 }
 
+// Streaming loads for expert weights: each weight byte is read once per token, so keep it out of L1 (ld.global.nc.L1::no_allocate).
+// Measured on RTX A6000 (random weights, 8 experts): gate_up 46.6 -> 44.0 us, down 27.3 -> 26.5 us, bit-identical output.
+__device__ __forceinline__ uint4 ldg_stream128(const uint4 * p) {
+    uint4 r; asm volatile("ld.global.nc.L1::no_allocate.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(r.x), "=r"(r.y), "=r"(r.z), "=r"(r.w) : "l"(p)); return r;
+}
+__device__ __forceinline__ uint32_t ldg_stream32(const uint32_t * p) {
+    uint32_t r; asm volatile("ld.global.nc.L1::no_allocate.u32 %0, [%1];" : "=r"(r) : "l"(p)); return r;
+}
+
 // Row-packed NVFP4 expert GEMV (the adopted decomposition, see engine/src/nvfp4_warp_split.cu).
 // A warp owns RP = 4 rows and walks RP*NCH (row, 16-byte chunk) units spread over its 32 lanes
 // (unit u = lane + 32 t). Consecutive lanes read consecutive chunks of one row, so the weight loads stay
@@ -424,8 +433,8 @@ nvfp4_gemv_pack4(const uint8_t * __restrict__ qs_all, const uint8_t * __restrict
 #pragma unroll
                 for (int i = 0; i < 8; ++i) xv[i] = xb[i];
                 const float * xf = reinterpret_cast<const float *>(xv);
-                const uint4 a = __ldg(reinterpret_cast<const uint4 *>(qs + (size_t) row * (K / 2)) + c);
-                const uint32_t sw = __ldg(reinterpret_cast<const uint32_t *>(sc + (size_t) row * (K / 16)) + b);
+                const uint4 a = ldg_stream128(reinterpret_cast<const uint4 *>(qs + (size_t) row * (K / 2)) + c);
+                const uint32_t sw = ldg_stream32(reinterpret_cast<const uint32_t *>(sc + (size_t) row * (K / 16)) + b);
                 const uint32_t w[4] = {a.x, a.y, a.z, a.w};
 #pragma unroll
                 for (int h = 0; h < 2; ++h) {
