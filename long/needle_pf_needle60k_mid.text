@@ -1,0 +1,6 @@
+<|message_model|><|content_thinking|>The user is asking for the secret code mentioned in the document. I need to find "The secret code is" in the document.
+
+Looking at the document, I see:
+"The secret code is 7391."
+
+So the answer is 7391.<|end_message|><|message_model|><|content_text|>7391<|end_message|><|content_model_end_sampling|>

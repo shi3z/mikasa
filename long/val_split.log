@@ -1,0 +1,10 @@
+prefill: 3333 tokens, 2448.6 tokens/s (chunk B=256, GPU time)
+  step 21: argmax 2449 vs ref 482, ref gap top1-top2 0.065, test gap between those two 0.113
+logs/vs_256_1000.bin vs logs/vb_ctx3333_kv16.bin: 32 steps, argmax mismatches 1, relL2 mean 7.376e-02 max 4.446e-01, max abs diff 11.160
+prefill: 3333 tokens, 3214.8 tokens/s (chunk B=512, GPU time)
+  step 21: argmax 2449 vs ref 482, ref gap top1-top2 0.065, test gap between those two 0.014
+logs/vs_512_777.bin vs logs/vb_ctx3333_kv16.bin: 32 steps, argmax mismatches 1, relL2 mean 6.833e-02 max 2.893e-01, max abs diff 7.515
+prefill: 3333 tokens, 1745.7 tokens/s (chunk B=128, GPU time)
+  step 13: argmax 196976 vs ref 11, ref gap top1-top2 0.119, test gap between those two 0.009
+  step 21: argmax 2449 vs ref 482, ref gap top1-top2 0.065, test gap between those two 0.127
+logs/vs_128_2049.bin vs logs/vb_ctx3333_kv16.bin: 32 steps, argmax mismatches 2, relL2 mean 6.189e-02 max 1.504e-01, max abs diff 4.170

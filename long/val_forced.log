@@ -1,0 +1,52 @@
+[ctx4096_kv16 baseline] prefill: 4096 tokens, 293.2 tokens/s (chunk B=16, GPU time)
+[ctx4096_kv16 pb=128] prefill: 4096 tokens, 1781.3 tokens/s (chunk B=128, GPU time)
+logs/vf_ctx4096_kv16_128.bin vs logs/vb_ctx4096_kv16.bin: 32 steps, argmax mismatches 0, relL2 mean 7.565e-02 max 2.042e-01, max abs diff 4.153
+[ctx4096_kv16 pb=256] prefill: 4096 tokens, 2523.1 tokens/s (chunk B=256, GPU time)
+logs/vf_ctx4096_kv16_256.bin vs logs/vb_ctx4096_kv16.bin: 32 steps, argmax mismatches 0, relL2 mean 7.565e-02 max 2.042e-01, max abs diff 4.153
+[ctx4096_kv16 pb=512] prefill: 4096 tokens, 3280.9 tokens/s (chunk B=512, GPU time)
+logs/vf_ctx4096_kv16_512.bin vs logs/vb_ctx4096_kv16.bin: 32 steps, argmax mismatches 0, relL2 mean 7.565e-02 max 2.042e-01, max abs diff 4.153
+[ctx4096_kv16 pb=1024] prefill: 4096 tokens, 3759.9 tokens/s (chunk B=1024, GPU time)
+logs/vf_ctx4096_kv16_1024.bin vs logs/vb_ctx4096_kv16.bin: 32 steps, argmax mismatches 0, relL2 mean 7.565e-02 max 2.042e-01, max abs diff 4.153
+[ctx3333_kv16 baseline] prefill: 3333 tokens, 293.2 tokens/s (chunk B=16, GPU time)
+[ctx3333_kv16 pb=128] prefill: 3333 tokens, 1764.0 tokens/s (chunk B=128, GPU time)
+  step 13: argmax 196976 vs ref 11, ref gap top1-top2 0.119, test gap between those two 0.007
+logs/vf_ctx3333_kv16_128.bin vs logs/vb_ctx3333_kv16.bin: 32 steps, argmax mismatches 1, relL2 mean 6.123e-02 max 1.594e-01, max abs diff 3.513
+[ctx3333_kv16 pb=256] prefill: 3333 tokens, 2476.2 tokens/s (chunk B=256, GPU time)
+  step 13: argmax 196976 vs ref 11, ref gap top1-top2 0.119, test gap between those two 0.007
+logs/vf_ctx3333_kv16_256.bin vs logs/vb_ctx3333_kv16.bin: 32 steps, argmax mismatches 1, relL2 mean 6.123e-02 max 1.594e-01, max abs diff 3.513
+[ctx3333_kv16 pb=512] prefill: 3333 tokens, 3220.8 tokens/s (chunk B=512, GPU time)
+  step 13: argmax 196976 vs ref 11, ref gap top1-top2 0.119, test gap between those two 0.007
+logs/vf_ctx3333_kv16_512.bin vs logs/vb_ctx3333_kv16.bin: 32 steps, argmax mismatches 1, relL2 mean 6.123e-02 max 1.594e-01, max abs diff 3.513
+[ctx3333_kv16 pb=1024] prefill: 3333 tokens, 3649.5 tokens/s (chunk B=1024, GPU time)
+  step 13: argmax 196976 vs ref 11, ref gap top1-top2 0.119, test gap between those two 0.007
+logs/vf_ctx3333_kv16_1024.bin vs logs/vb_ctx3333_kv16.bin: 32 steps, argmax mismatches 1, relL2 mean 6.123e-02 max 1.594e-01, max abs diff 3.513
+[ctx1500_kv16 baseline] prefill: 1500 tokens, 297.6 tokens/s (chunk B=16, GPU time)
+[ctx1500_kv16 pb=128] prefill: 1500 tokens, 1833.4 tokens/s (chunk B=128, GPU time)
+logs/vf_ctx1500_kv16_128.bin vs logs/vb_ctx1500_kv16.bin: 32 steps, argmax mismatches 0, relL2 mean 8.528e-02 max 4.038e-01, max abs diff 6.240
+[ctx1500_kv16 pb=256] prefill: 1500 tokens, 2576.9 tokens/s (chunk B=256, GPU time)
+logs/vf_ctx1500_kv16_256.bin vs logs/vb_ctx1500_kv16.bin: 32 steps, argmax mismatches 0, relL2 mean 8.528e-02 max 4.038e-01, max abs diff 6.240
+[ctx1500_kv16 pb=512] prefill: 1500 tokens, 3363.8 tokens/s (chunk B=512, GPU time)
+logs/vf_ctx1500_kv16_512.bin vs logs/vb_ctx1500_kv16.bin: 32 steps, argmax mismatches 0, relL2 mean 8.528e-02 max 4.038e-01, max abs diff 6.240
+[ctx1500_kv16 pb=1024] prefill: 1500 tokens, 3703.0 tokens/s (chunk B=1024, GPU time)
+logs/vf_ctx1500_kv16_1024.bin vs logs/vb_ctx1500_kv16.bin: 32 steps, argmax mismatches 0, relL2 mean 8.528e-02 max 4.038e-01, max abs diff 6.240
+[ctx512_kv16 baseline] prefill: 512 tokens, 308.6 tokens/s (chunk B=16, GPU time)
+[ctx512_kv16 pb=128] prefill: 512 tokens, 1954.8 tokens/s (chunk B=128, GPU time)
+logs/vf_ctx512_kv16_128.bin vs logs/vb_ctx512_kv16.bin: 32 steps, argmax mismatches 0, relL2 mean 4.911e-03 max 2.220e-02, max abs diff 1.340
+[ctx512_kv16 pb=256] prefill: 512 tokens, 2715.5 tokens/s (chunk B=256, GPU time)
+logs/vf_ctx512_kv16_256.bin vs logs/vb_ctx512_kv16.bin: 32 steps, argmax mismatches 0, relL2 mean 4.911e-03 max 2.220e-02, max abs diff 1.340
+[ctx512_kv16 pb=512] prefill: 512 tokens, 3560.0 tokens/s (chunk B=512, GPU time)
+logs/vf_ctx512_kv16_512.bin vs logs/vb_ctx512_kv16.bin: 32 steps, argmax mismatches 0, relL2 mean 4.911e-03 max 2.220e-02, max abs diff 1.340
+[ctx512_kv16 pb=1024] prefill: 512 tokens, 3539.1 tokens/s (chunk B=1024, GPU time)
+logs/vf_ctx512_kv16_1024.bin vs logs/vb_ctx512_kv16.bin: 32 steps, argmax mismatches 0, relL2 mean 4.911e-03 max 2.220e-02, max abs diff 1.340
+[ctx130_kv16 baseline] prefill: 130 tokens, 303.5 tokens/s (chunk B=16, GPU time)
+[ctx130_kv16 pb=128] prefill: 130 tokens, 1501.9 tokens/s (chunk B=128, GPU time)
+logs/vf_ctx130_kv16_128.bin vs logs/vb_ctx130_kv16.bin: 20 steps, argmax mismatches 0, relL2 mean 1.261e-02 max 3.034e-02, max abs diff 1.473
+[ctx130_kv16 pb=256] prefill: 130 tokens, 1955.4 tokens/s (chunk B=256, GPU time)
+logs/vf_ctx130_kv16_256.bin vs logs/vb_ctx130_kv16.bin: 20 steps, argmax mismatches 0, relL2 mean 1.261e-02 max 3.034e-02, max abs diff 1.473
+[ctx130_kv16 pb=512] prefill: 130 tokens, 1971.4 tokens/s (chunk B=512, GPU time)
+logs/vf_ctx130_kv16_512.bin vs logs/vb_ctx130_kv16.bin: 20 steps, argmax mismatches 0, relL2 mean 1.261e-02 max 3.034e-02, max abs diff 1.473
+[ctx130_kv16 pb=1024] prefill: 130 tokens, 1983.3 tokens/s (chunk B=1024, GPU time)
+logs/vf_ctx130_kv16_1024.bin vs logs/vb_ctx130_kv16.bin: 20 steps, argmax mismatches 0, relL2 mean 1.261e-02 max 3.034e-02, max abs diff 1.473
+[ctx4096_kv32 baseline] prefill: 4096 tokens, 293.2 tokens/s (chunk B=16, GPU time)
+[ctx4096_kv32 pb=512] prefill: 4096 tokens, 3273.3 tokens/s (chunk B=512, GPU time)
+logs/vf_ctx4096_kv32_512.bin vs logs/vb_ctx4096_kv32.bin: 32 steps, argmax mismatches 0, relL2 mean 8.385e-02 max 1.772e-01, max abs diff 5.066

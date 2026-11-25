@@ -1,0 +1,24 @@
+fast prefill chunk throughput at depth (real tokens in the cache, PB=256)
+   depth   ms/chunk      tok/s
+       0      94.09     2720.8
+     256      98.35     2603.0
+    4096     105.55     2425.3
+   16384     111.27     2300.7
+   32768     123.66     2070.2
+   60000     144.19     1775.4
+fast prefill chunk throughput at depth (real tokens in the cache, PB=512)
+   depth   ms/chunk      tok/s
+       0     149.25     3430.5
+     256     153.92     3326.5
+    4096     166.20     3080.7
+   16384     179.33     2855.1
+   32768     201.25     2544.0
+   60000     237.00     2160.3
+fast prefill chunk throughput at depth (real tokens in the cache, PB=1024)
+   depth   ms/chunk      tok/s
+       0     264.27     3874.8
+     256     270.20     3789.7
+    4096     291.86     3508.5
+   16384     321.30     3187.0
+   32768     361.66     2831.4
+   60000     433.71     2361.0

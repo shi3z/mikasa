@@ -1,0 +1,5 @@
+needle30k: prefill: 29806 tokens, 2931.9 tokens/s (chunk B=512, GPU time) -> content_text|>7391
+needle30k_mid: prefill: 29806 tokens, 2919.0 tokens/s (chunk B=512, GPU time) -> content_text|>7391
+needle60k: prefill: 59865 tokens, 2629.3 tokens/s (chunk B=512, GPU time) -> content_text|>7391
+needle60k_mid: prefill: 59865 tokens, 2614.8 tokens/s (chunk B=512, GPU time) -> content_text|>7391
+needle60k kv32: prefill: 59865 tokens, 2583.8 tokens/s (chunk B=512, GPU time) -> content_text|>7391

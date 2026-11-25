@@ -10,7 +10,9 @@
 //   Q8_0:  qsT[g][blk][h][lane] (16 B)  = bytes 16h..16h+15 of block blk of row 32g+lane;  scT[g][blk][lane] (half)
 //   NVFP4: qsT[e][g][b][h][lane] (16 B) = bytes 16h..16h+15 of 64-k block b of row 32g+lane; scT[e][g][b][lane] (u32)
 static std::unordered_map<const void *, const void *> g_tmap;   // original device pointer -> interleaved copy
+static bool g_lean = false;   // lean mode: the weights are loaded directly in the interleaved layout (no original SoA copy, no forward_token)
 template <typename T> static const T * tmap(const T * p) {
+    if (g_lean) return p;     // pointers already are the interleaved ones
     auto it = g_tmap.find((const void *) p);
     if (it == g_tmap.end()) { std::fprintf(stderr, "no interleaved copy registered\n"); std::exit(1); }
     return (const T *) it->second;
@@ -29,13 +31,25 @@ __global__ void k_repack_il(const uint4 * __restrict__ qs, const uint8_t * __res
     for (int h = 0; h < 2; ++h) qT[((g * nb + b) * 2 + h) * 32 + lane] = qs[(rr * nb + b) * 2 + h];
     for (int k = 0; k < scb; ++k) sT[((g * nb + b) * 32 + lane) * scb + k] = sc[(rr * nb + b) * scb + k];
 }
-static void register_il(const void * qs, const void * sc, size_t mats, int N, int nb, int scb) {
-    uint4 * qT; uint8_t * sT;
+static void register_il_ret(const void * qs, const void * sc, size_t mats, int N, int nb, int scb, uint4 *& qT, uint8_t *& sT) {
     const size_t total = mats * N * nb;
     if (cudaMalloc(&qT, total * 32) != cudaSuccess || cudaMalloc(&sT, total * scb) != cudaSuccess) { std::fprintf(stderr, "out of memory (interleaved copy)\n"); std::exit(1); }
     k_repack_il<<<(total + 255) / 256, 256>>>((const uint4 *) qs, (const uint8_t *) sc, qT, sT, total, N, nb, scb);
+}
+static void register_il(const void * qs, const void * sc, size_t mats, int N, int nb, int scb) {
+    uint4 * qT; uint8_t * sT;
+    register_il_ret(qs, sc, mats, N, nb, scb, qT, sT);
     g_tmap[qs] = qT;
     g_tmap[sc] = sT;
+}
+// lean mode: convert a freshly uploaded SoA tensor to the interleaved layout, free the SoA copy and return the interleaved pointers
+template <typename QT, typename ST>
+static void lean_il(QT *& qs, ST *& sc, size_t mats, int N, int nb, int scb) {
+    uint4 * qT; uint8_t * sT;
+    register_il_ret(qs, sc, mats, N, nb, scb, qT, sT);
+    if (cudaDeviceSynchronize() != cudaSuccess) { std::fprintf(stderr, "repack failed\n"); std::exit(1); }
+    cudaFree(qs); cudaFree(sc);
+    qs = (QT *) qT; sc = (ST *) sT;
 }
 // Q8_0 matrix [N][K]; scales are halves (2 bytes per block)
 static void register_q8_il(const int8_t * qs, const __half * sc, int N, int K, size_t mats = 1) { register_il(qs, sc, mats, N, K / 32, 2); }

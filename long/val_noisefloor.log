@@ -1,0 +1,1 @@
+logs/nf_b16.bin vs logs/nf_b32.bin: 32 steps, argmax mismatches 0, relL2 mean 7.092e-02 max 1.898e-01, max abs diff 4.321

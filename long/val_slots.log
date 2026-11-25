@@ -1,0 +1,6 @@
+prefill: 1500 tokens, 297.8 tokens/s (chunk B=16, GPU time)
+prefill: 1500 tokens, 3360.8 tokens/s (chunk B=512, GPU time)
+slot 2: generated tokens differing: 0 of 32
+prefill: 1500 tokens, 297.1 tokens/s (chunk B=16, GPU time)
+prefill: 1500 tokens, 3366.1 tokens/s (chunk B=512, GPU time)
+slot 3: generated tokens differing: 0 of 32

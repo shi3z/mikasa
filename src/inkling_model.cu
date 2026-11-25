@@ -3,7 +3,7 @@
 // Writes l_out-<il>.bin ([T][E]) and logits.bin ([T][200058]) to outdir.
 #include "gguf.hpp"
 #include "kernels_common.cuh"
-#include "batch_kernels2.cuh"
+#include "long_kernels.cuh"
 
 #include <cuda_runtime.h>
 
@@ -99,6 +99,7 @@ static Q8W load_q8(Model & m, const std::string & name, int K, int N) {
     w.sc = upload<__half>(sc.data(), sc.size());
     w.K = K;
     w.N = N;
+    if (g_lean) lean_il(w.qs, w.sc, 1, N, K / 32, 2);
     return w;
 }
 
@@ -193,6 +194,7 @@ static void load_phys(Model & m, int ip, Phys & P) {
             P.gu_q8s = upload<__half>(sc.data(), sc.size());
             P.dn_q8 = upload<int8_t>(qd.data(), qd.size());
             P.dn_q8s = upload<__half>(sd.data(), sd.size());
+            if (g_lean) { lean_il(P.gu_q8, P.gu_q8s, NEXP, 2304, E / 32, 2); lean_il(P.dn_q8, P.dn_q8s, NEXP, E, FFN / 32, 2); }
         } else {
             const size_t per = (size_t) 2304 * (E / 64) * 36;
             std::vector<uint8_t> qs((size_t) NEXP * 2304 * (E / 2)), sc((size_t) NEXP * 2304 * (E / 16));
@@ -206,6 +208,7 @@ static void load_phys(Model & m, int ip, Phys & P) {
                 repack_nv_soa(m.ptr(td) + e * perd, FFN, 2304, &qd[(size_t) e * 2304 * (FFN / 2)], &sd[(size_t) e * 2304 * (FFN / 16)]);
             P.dn_qs = upload<uint8_t>(qd.data(), qd.size());
             P.dn_sc = upload<uint8_t>(sd.data(), sd.size());
+            if (g_lean) { lean_il(P.gu_qs, P.gu_sc, NEXP, 2304, E / 64, 4); lean_il(P.dn_qs, P.dn_sc, NEXP, E, FFN / 64, 4); }
         }
     }
     if (ip >= CORE_START && ip < CORE_END) {
@@ -300,12 +303,12 @@ static Engine * build_engine(Model & m) {
         g.head.sc = upload<__half>(sc.data(), sc.size());
         g.head.K = E;
         g.head.N = NVOCAB_PAD;
+        if (g_lean) lean_il(g.head.qs, g.head.sc, 1, NVOCAB_PAD, E / 32, 2);
     }
     for (int ip = 0; ip < NPHYS; ++ip) load_phys(m, ip, g.phys[ip]);
 
     for (int il = 0; il < NAPP; ++il) {
-        alloc_zero(&g.kcache[il], (size_t) MAXT * NKV * HD);
-        alloc_zero(&g.vcache[il], (size_t) MAXT * NKV * HD);
+        if (!g_lean) { alloc_zero(&g.kcache[il], (size_t) MAXT * NKV * HD); alloc_zero(&g.vcache[il], (size_t) MAXT * NKV * HD); }
         alloc_zero(&g.kstate[il], 3 * NKV * HD);
         alloc_zero(&g.vstate[il], 3 * NKV * HD);
         alloc_zero(&g.poststate[il], 3 * E);
@@ -536,6 +539,8 @@ static void set_pos_tok(Engine & g, int pos, int tok, cudaStream_t s) {
 }
 
 #include "batch_host.inc"
+#include "prefill_host.inc"
+#include "long_host.inc"
 
 int main(int argc, char ** argv) {
     if (argc < 3) { std::fprintf(stderr, "usage: inkling_model model.gguf outdir [--tokens a,b] [--gen N] [--reps N] [--dump]\n"); return 2; }
@@ -543,8 +548,11 @@ int main(int argc, char ** argv) {
     std::vector<int> toks = {371, 151451, 149879, 151194, 149884};
     int gen = 0, reps = 0;
     bool dump = false, batch_test = false, batch_bench = false;
-    std::string probe = "/tmp/claude-1000/-home-fuzokunagaoka-rrr/3bddbe8c-f3c7-483a-b598-067efc7277e7/scratchpad/probe";
+    std::string probe = "probe";
     int bench_b = 0, bench_pos = 300;
+    LongArgs LA;
+    bool long_mode = false;
+    std::string cmpa, cmpb; int cmpk = 0;
     for (int i = 3; i < argc; ++i) {
         if (std::strcmp(argv[i], "--tokens") == 0 && i + 1 < argc) {
             toks.clear();
@@ -559,7 +567,37 @@ int main(int argc, char ** argv) {
         else if (std::strcmp(argv[i], "--probe") == 0 && i + 1 < argc) probe = argv[++i];
         else if (std::strcmp(argv[i], "--bench-b") == 0 && i + 1 < argc) bench_b = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--bench-pos") == 0 && i + 1 < argc) bench_pos = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--lean") == 0) { g_lean = true; long_mode = true; }
+        else if (std::strcmp(argv[i], "--long") == 0) long_mode = true;
+        else if (std::strcmp(argv[i], "--kv32") == 0) LA.kv16 = false;
+        else if (std::strcmp(argv[i], "--kv16") == 0) LA.kv16 = true;
+        else if (std::strcmp(argv[i], "--maxctx") == 0 && i + 1 < argc) LA.maxctx = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--nslots") == 0 && i + 1 < argc) LA.nslots = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--ring") == 0 && i + 1 < argc) LA.ring = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--prefill") == 0 && i + 1 < argc) LA.prefill_file = argv[++i];
+        else if (std::strcmp(argv[i], "--pf-b") == 0 && i + 1 < argc) LA.pf_b = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--pf-fast") == 0 && i + 1 < argc) LA.pf_fast = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--layer-cmp") == 0 && i + 1 < argc) LA.layer_cmp = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--pf-all") == 0) LA.pf_all = true;
+        else if (std::strcmp(argv[i], "--force") == 0 && i + 1 < argc) LA.force_file = argv[++i];
+        else if (std::strcmp(argv[i], "--gen-logits") == 0 && i + 1 < argc) LA.gen_logits = argv[++i];
+        else if (std::strcmp(argv[i], "--moe-tb") == 0 && i + 1 < argc) g_moe_tb = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--pf-split") == 0 && i + 1 < argc) LA.pf_split = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--time-depths") == 0 && i + 1 < argc) LA.time_depths = argv[++i];
+        else if (std::strcmp(argv[i], "--slot") == 0 && i + 1 < argc) LA.prefill_slot = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--tail") == 0 && i + 2 < argc) { LA.tail = std::atoi(argv[++i]); LA.tail_out = argv[++i]; }
+        else if (std::strcmp(argv[i], "--argmax-out") == 0 && i + 1 < argc) LA.argmax_out = argv[++i];
+        else if (std::strcmp(argv[i], "--cmp-ref") == 0 && i + 1 < argc) LA.cmp_ref = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--ref-all") == 0) LA.ref_all = true;
+        else if (std::strcmp(argv[i], "--gen-long") == 0 && i + 2 < argc) { LA.gen = std::atoi(argv[++i]); LA.gen_out = argv[++i]; }
+        else if (std::strcmp(argv[i], "--multi-check") == 0) LA.multi_check = true;
+        else if (std::strcmp(argv[i], "--time-decode") == 0) LA.time_decode = true;
+        else if (std::strcmp(argv[i], "--time-prefill") == 0) LA.time_prefill = true;
+        else if (std::strcmp(argv[i], "--cmp-dump") == 0 && i + 3 < argc) { cmpa = argv[++i]; cmpb = argv[++i]; cmpk = std::atoi(argv[++i]); }
     }
+    if (!cmpa.empty()) return run_cmp_dump(cmpa, cmpb, cmpk);
+    LA.lean = g_lean;
+    if (const char * e = std::getenv("MIKASA_KVROUND")) g_kv_rmask = std::atoi(e);
     const int P = (int) toks.size();
     mkdir(outdir.c_str(), 0755);
     if (P + gen > MAXT) { std::fprintf(stderr, "prompt + gen exceeds MAXT\n"); return 1; }
@@ -571,6 +609,7 @@ int main(int argc, char ** argv) {
     std::printf("loaded model to GPU\n");
     cudaStream_t s;
     CHECK(cudaStreamCreate(&s));
+    if (long_mode) return run_long(g, LA, s);
     if (batch_test) return run_batch_test(g, probe, s);
     if (batch_bench) return run_batch_bench(g, probe, s, bench_b, bench_pos);
 

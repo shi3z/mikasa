@@ -1,0 +1,7 @@
+dense fmt=0 seg=0: max abs diff 2.404e-05 (max |ref| 7.776e+01, rel 3.09e-07)
+dense fmt=0 seg=1: max abs diff 2.727e-05 (max |ref| 7.442e+01, rel 3.66e-07)
+moe fmt=0: max abs diff 2.583e-05 (max |ref| 7.101e+01, rel 3.64e-07)
+dense fmt=1 seg=0: max abs diff 1.446e-02 (max |ref| 3.669e+03, rel 3.94e-06)
+dense fmt=1 seg=1: max abs diff 1.466e-02 (max |ref| 3.393e+03, rel 4.32e-06)
+moe fmt=1: max abs diff 1.451e-02 (max |ref| 3.639e+03, rel 3.99e-06)
+ALL OK

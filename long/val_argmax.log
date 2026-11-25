@@ -1,0 +1,3 @@
+argmax agreement logs/am_b16.txt vs logs/am_f16.txt: all 4021/4096 = 98.17%  positions>=1024: 3005/3072 = 97.82%
+argmax agreement logs/am_b32.txt vs logs/am_f32.txt: all 4020/4096 = 98.14%  positions>=1024: 3005/3072 = 97.82%
+argmax agreement logs/am_b16.txt vs logs/am_b32.txt: all 4042/4096 = 98.68%  positions>=1024: 3025/3072 = 98.47%

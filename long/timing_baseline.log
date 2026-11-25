@@ -1,0 +1,6 @@
+baseline ctx256: prefill: 256 tokens, 305.6 tokens/s (chunk B=16, GPU time)
+baseline ctx512: prefill: 512 tokens, 306.5 tokens/s (chunk B=16, GPU time)
+baseline ctx4096: prefill: 4096 tokens, 292.3 tokens/s (chunk B=16, GPU time)
+baseline ctx16384: prefill: 16384 tokens, 279.1 tokens/s (chunk B=16, GPU time)
+baseline ctx32768: prefill: 32768 tokens, 264.8 tokens/s (chunk B=16, GPU time)
+baseline ctx61440: prefill: 61440 tokens, 246.7 tokens/s (chunk B=16, GPU time)

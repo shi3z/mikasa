@@ -1,0 +1,17 @@
+loaded model to GPU
+[mem] weights loaded                     used 18.61 GB (free 32.28 GB of 50.90 GB)
+[mem] after init_batch (KV + buffers)    used 29.29 GB (free 21.61 GB of 50.90 GB)
+config: lean=1 kv=fp16(full layers) maxctx=65536 nslots=4 ring=1040 ref_all=0
+decode timing (ms per step, all sequences one token each, CUDA graph, 30 reps; positions = context length)
+ context        S=1        S=4
+     300      12.48      20.12
+    1024      13.05      21.52
+    8192      13.17      22.32
+   32768      14.35      27.10
+   65000      16.05      33.56
+prefill chunk timing (same-sequence batch of B tokens at position ctx, synthetic KV)
+     ctx    B   ms/chunk      tok/s
+     256   16      51.89      308.3
+    8192   16      55.25      289.6
+   32768   16      62.29      256.9
+   64968   16      70.67      226.4

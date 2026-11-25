@@ -3,18 +3,51 @@
 // (first NVOCAB valid, softcapped) and X.barg[B] (argmax per token). Engine state afterwards = state after B sequential
 // forward_token steps; batch_rollback(j) rewinds the carried conv states to "after j tokens of the batch".
 
+// debug: per-application dump of the residual stream (compare the paths layer by layer)
+static std::vector<std::vector<float>> * g_dump_cur = nullptr;
+static int g_dump_off = 0, g_dump_n = 0;
+static void dump_cur(int il, const float * cur, int B, cudaStream_t s) {
+    if (!g_dump_cur) return;
+    CHECK(cudaStreamSynchronize(s));
+    if (g_dump_cur->size() < (size_t) NAPP) g_dump_cur->resize(NAPP);
+    auto & v = (*g_dump_cur)[il];
+    if (v.empty()) v.assign((size_t) g_dump_n * E, 0.0f);
+    CHECK(cudaMemcpy(v.data() + (size_t) g_dump_off * E, cur, (size_t) B * E * sizeof(float), cudaMemcpyDeviceToHost));
+}
+
 struct BatchState {
     float *emb, *cur, *prelude_cur, *bank_last, *bank, *blocks, *scores, *inv, *inbuf, *xs3, *msgs, *hcat, *r64, *Qv, *R0, *G,
         *sinks, *dynk, *dynv, *Kconv, *Vconv, *Qc, *Rc, *O, *gated, *ffn_inp, *mixed, *xf, *lrouter, *gu, *hbuf, *dn,
         *head_in, *xnorm, *logits, *wts;
     int *ids, *grp_e, *grp_n, *grp_t, *grp_nu, *btok, *barg, *rb_j, *pos_arr, *slot_arr;
-    // extra sequence slots 1..3 (multi-sequence mode): KV caches [3][MAXT][NKV*HD] and conv states [3][3*C] per application
-    float *kx[NAPP], *vx[NAPP], *Sxk[NAPP], *Sxv[NAPP], *Sxp[NAPP], *Sxf[NAPP];
+    // KV caches of the sequence slots 0..nslots-1 per application (see KVOpts); conv states of slots 1..3 per application
+    KVSlots kvs[NAPP];
+    int ring = NSWA + MB, maxctx = MAXT, nslots = 4;   // SWA ring rows, positions of a full-attention cache, slots
+    bool kv16 = false;                                // full-attention KV in FP16
+    bool swa_split = true;                            // SWA attention as split-KV (else kb_attn2_ring)
+    bool ref = false;                                 // use the naive reference attention (kb_attn_ref) instead of the optimised ones
+    float *Opart = nullptr, *MLpart = nullptr, *Sref = nullptr;   // split-KV partials, reference scores
+    float *Sxk[NAPP], *Sxv[NAPP], *Sxp[NAPP], *Sxf[NAPP];
     float *Hk[NAPP], *Hv[NAPP], *Hp[NAPP], *Hf[NAPP];     // [3 + MB][C] history/input buffers per application
     RbEntry * rb_tab;
 };
 
-static void init_batch(Engine & g, BatchState & X) {
+// KV configuration. Default (= old behaviour): slot 0 aliases the engine's KV (forward_token interoperates), FP32, 1024 positions.
+struct KVOpts {
+    bool kv16 = false;        // full-attention KV in FP16 (SWA rings are always FP32)
+    int maxctx = MAXT;        // positions per slot of the full-attention caches (<= ATT_MAXCTX)
+    int nslots = 4;           // sequence slots with a KV cache (1..4)
+    bool alias0 = true;       // slot 0 = Engine::kcache/vcache (needs the non-lean engine; requires FP32 and maxctx <= MAXT)
+    int ring = NSWA + MB;     // rows of an SWA ring (>= NSWA + MB - 1 so a batch cannot overwrite keys its first query needs)
+    bool ref = false;         // allocate the reference-attention scratch
+};
+
+static void init_batch(Engine & g, BatchState & X, const KVOpts & ko = KVOpts()) {
+    if (std::getenv("MIKASA_SWA_OLD")) X.swa_split = false;
+    X.kv16 = ko.kv16; X.maxctx = ko.maxctx; X.nslots = ko.nslots; X.ring = ko.ring;
+    if (ko.maxctx > ATT_MAXCTX || ko.ring < NSWA + MB - 1) { std::fprintf(stderr, "bad KV options\n"); std::exit(1); }
+    if (ko.alias0 && (g_lean || ko.kv16 || ko.maxctx > MAXT)) { std::fprintf(stderr, "alias0 needs the non-lean engine, FP32 KV, maxctx <= %d\n", MAXT); std::exit(1); }
+    if (!g_lean)
     for (int ip = 0; ip < NPHYS; ++ip) {            // interleaved weight copies for the lane-per-row kernels
         const Phys & P = g.phys[ip];
         register_q8_il(P.wq.qs, P.wq.sc, NH * HD, E); register_q8_il(P.wk.qs, P.wk.sc, NKV * HD, E);
@@ -23,7 +56,7 @@ static void init_batch(Engine & g, BatchState & X) {
         if (P.exp_q8) { register_q8_il(P.gu_q8, P.gu_q8s, 2304, E, NEXP); register_q8_il(P.dn_q8, P.dn_q8s, E, FFN, NEXP); }
         else { register_nv_il(P.gu_qs, P.gu_sc, 2304, E, NEXP); register_nv_il(P.dn_qs, P.dn_sc, E, FFN, NEXP); }
     }
-    register_q8_il(g.head.qs, g.head.sc, NVOCAB_PAD, E);
+    if (!g_lean) register_q8_il(g.head.qs, g.head.sc, NVOCAB_PAD, E);
     CHECK(cudaDeviceSynchronize());
     alloc_zero(&X.emb, MB * E); alloc_zero(&X.cur, MB * E); alloc_zero(&X.prelude_cur, MB * E); alloc_zero(&X.bank_last, MB * E);
     alloc_zero(&X.bank, (size_t) MB * MS_STATES * E); alloc_zero(&X.blocks, (size_t) MB * MS_STATES * E);
@@ -46,7 +79,17 @@ static void init_batch(Engine & g, BatchState & X) {
     for (int il = 0; il < NAPP; ++il) {
         alloc_zero(&X.Hk[il], (size_t) (3 + MB) * NKV * HD); alloc_zero(&X.Hv[il], (size_t) (3 + MB) * NKV * HD);
         alloc_zero(&X.Hp[il], (size_t) (3 + MB) * E); alloc_zero(&X.Hf[il], (size_t) (3 + MB) * E);
-        alloc_zero(&X.kx[il], (size_t) 3 * MAXT * NKV * HD); alloc_zero(&X.vx[il], (size_t) 3 * MAXT * NKV * HD);
+        {
+            const bool swa = app_is_swa(il);
+            const size_t rows = swa ? (size_t) ko.ring : (size_t) ko.maxctx;
+            const size_t esz = (swa || !ko.kv16) ? 4 : 2;
+            for (int sl = 0; sl < 4; ++sl) {
+                X.kvs[il].k[sl] = X.kvs[il].v[sl] = nullptr;
+                if (sl >= ko.nslots) continue;
+                if (sl == 0 && ko.alias0) { X.kvs[il].k[0] = g.kcache[il]; X.kvs[il].v[0] = g.vcache[il]; continue; }
+                CHECK(cudaMalloc(&X.kvs[il].k[sl], rows * NKV * HD * esz)); CHECK(cudaMalloc(&X.kvs[il].v[sl], rows * NKV * HD * esz));
+            }
+        }
         alloc_zero(&X.Sxk[il], 3 * 3 * NKV * HD); alloc_zero(&X.Sxv[il], 3 * 3 * NKV * HD);
         alloc_zero(&X.Sxp[il], 3 * 3 * E); alloc_zero(&X.Sxf[il], 3 * 3 * E);
         tab.push_back({g.kstate[il], X.Hk[il], NKV * HD});
@@ -54,6 +97,9 @@ static void init_batch(Engine & g, BatchState & X) {
         tab.push_back({g.poststate[il], X.Hp[il], E});
         tab.push_back({g.ffnstate[il], X.Hf[il], E});
     }
+    CHECK(cudaMalloc(&X.Opart, (size_t) MB * NH * ATT_NCH * HD * sizeof(float)));
+    CHECK(cudaMalloc(&X.MLpart, (size_t) MB * NH * ATT_NCH * 2 * sizeof(float)));
+    if (ko.ref) CHECK(cudaMalloc(&X.Sref, (size_t) MB * NH * ko.maxctx * sizeof(float)));
     CHECK(cudaMalloc(&X.rb_tab, tab.size() * sizeof(RbEntry)));
     CHECK(cudaMemcpy(X.rb_tab, tab.data(), tab.size() * sizeof(RbEntry), cudaMemcpyHostToDevice));
 }
@@ -145,15 +191,32 @@ static void forward_batch(Engine & g, BatchState & X, int B, int multi, cudaStre
 
         // ----- clips, cache write at pos + b
         kb_clip_qr<<<dim3(2 * NH, B), 128, 0, s>>>(X.Qv, P.q_clip, X.Qc, HD, QK_CLIP, X.R0, P.rel_clip, X.Rc, NREL, REL_CLIP, NH);
-        kb_kclip_vrms_pos<<<dim3(2 * NKV, B), 256, 0, s>>>(X.Kconv, g.kcache[il], QK_CLIP, X.Vconv, g.vcache[il], X.pos_arr, X.slot_arr, X.kx[il], X.vx[il], (size_t) MAXT * NKV * HD, NKV, HD, RMS_EPS);
+        if (swa || !X.kv16)
+            kb_kv_write<float><<<dim3(2 * NKV, B), 256, 0, s>>>(X.Kconv, X.Vconv, QK_CLIP, X.pos_arr, X.slot_arr, X.kvs[il], swa ? X.ring : 0, NKV, HD, RMS_EPS, swa ? 0 : g_kv_rmask);
+        else
+            kb_kv_write<__half><<<dim3(2 * NKV, B), 256, 0, s>>>(X.Kconv, X.Vconv, QK_CLIP, X.pos_arr, X.slot_arr, X.kvs[il], 0, NKV, HD, RMS_EPS);
         if (!swa) {
             kb_scale_tau<<<dim3((NH * HD + 255) / 256, B), 256, 0, s>>>(X.Qc, NH * HD, X.pos_arr);
             kb_scale_tau<<<dim3(2, B), 256, 0, s>>>(X.Rc, NH * NREL, X.pos_arr);
         }
 
         // ----- attention (query b sees positions <= pos + b), output projection into the post-conv history rows
-        kb_attn2<<<dim3(NKV, B), 512, 0, s>>>(X.Qc, g.kcache[il], g.vcache[il], X.kx[il], X.vx[il], (size_t) MAXT * NKV * HD, X.Rc,
-                                              P.rel_bias, X.sinks, X.pos_arr, X.slot_arr, swa ? NSWA : 0, X.O, X.G, X.gated);
+        if (X.ref) {
+            if (swa || !X.kv16)
+                kb_attn_ref<float><<<dim3(NH, B), 256, 0, s>>>(X.Qc, X.kvs[il], swa ? X.ring : 0, X.Rc, P.rel_bias, X.sinks, X.pos_arr, X.slot_arr,
+                                                                swa ? NSWA : 0, X.Sref, X.maxctx, X.O, X.G, X.gated);
+            else
+                kb_attn_ref<__half><<<dim3(NH, B), 256, 0, s>>>(X.Qc, X.kvs[il], 0, X.Rc, P.rel_bias, X.sinks, X.pos_arr, X.slot_arr,
+                                                                 0, X.Sref, X.maxctx, X.O, X.G, X.gated);
+        } else if (swa && !X.swa_split) {
+            kb_attn2_ring<<<dim3(NKV, B), 512, 0, s>>>(X.Qc, X.kvs[il], X.ring, X.Rc, P.rel_bias, X.sinks, X.pos_arr, X.slot_arr, NSWA, X.O, X.G, X.gated);
+        } else {
+            // split-KV: SWA = window of NSWA positions in chunks of SWA_CH (ring storage), full = all positions in chunks of ATT_CH
+            const int ch = swa ? SWA_CH : ATT_CH, nchg = swa ? (NSWA + SWA_CH - 1) / SWA_CH : (X.maxctx + ATT_CH - 1) / ATT_CH;
+            if (swa || !X.kv16) kb_attn_part<float><<<dim3(B, nchg, NKV), 512, 0, s>>>(X.Qc, X.kvs[il], X.Rc, P.rel_bias, X.sinks, X.pos_arr, X.slot_arr, swa ? NSWA : 0, swa ? X.ring : 0, ch, X.Opart, X.MLpart);
+            else                kb_attn_part<__half><<<dim3(B, nchg, NKV), 512, 0, s>>>(X.Qc, X.kvs[il], X.Rc, P.rel_bias, X.sinks, X.pos_arr, X.slot_arr, 0, 0, ch, X.Opart, X.MLpart);
+            kb_attn_combine<<<dim3(NH, B), 128, 0, s>>>(X.Opart, X.MLpart, X.pos_arr, swa ? NSWA : 0, ch, X.G, X.O, X.gated);
+        }
         launch_gemvb_q8(P.wo.qs, P.wo.sc, X.gated, NH * HD, X.Hp[il] + (size_t) 3 * E, E, NH * HD, E, B, s);
 
         // ----- block residual rules
@@ -191,6 +254,7 @@ static void forward_batch(Engine & g, BatchState & X, int B, int multi, cudaStre
         }
         kb_moe_conv_res<<<(E + 63) / 64, 64, 0, s>>>(X.dn, P.dn_scale ? P.dn_scale : g.ones, X.ids, X.wts, X.Hf[il], g.ffnstate[il],
                                                     P.ffn_post_conv, X.ffn_inp, X.cur, E, B, multi, X.slot_arr, X.Sxf[il]);
+        dump_cur(il, X.cur, B, s);
     }
 
     // ----- output
@@ -263,7 +327,7 @@ struct Runner {
     BatchState & X;
     cudaStream_t s;
     cudaGraphExec_t single = nullptr;
-    std::map<int, cudaGraphExec_t> bexec;   // key = B + 100 * multi
+    std::map<int, cudaGraphExec_t> bexec;   // key = B + 100 * multi + 1000 * ref
     Runner(Engine & g_, BatchState & X_, cudaStream_t s_) : g(g_), X(X_), s(s_) {}
     cudaGraphExec_t capture_single() {
         if (single) return single;
@@ -277,7 +341,8 @@ struct Runner {
         return single;
     }
     cudaGraphExec_t capture_batch(int B, int multi = 0) {
-        auto it = bexec.find(B + 100 * multi);
+        const int key = B + 100 * multi + 1000 * (X.ref ? 1 : 0);
+        auto it = bexec.find(key);
         if (it != bexec.end()) return it->second;
         cudaGraph_t gr;
         cudaGraphExec_t ex;
@@ -285,7 +350,7 @@ struct Runner {
         forward_batch(g, X, B, multi, s);
         CHECK(cudaStreamEndCapture(s, &gr));
         CHECK(cudaGraphInstantiate(&ex, gr, nullptr, nullptr, 0));
-        bexec[B + 100 * multi] = ex;
+        bexec[key] = ex;
         return ex;
     }
     // one sequential step at position pos; logits (NVOCAB) copied to out if non-null
@@ -302,6 +367,19 @@ struct Runner {
         CHECK(cudaMemcpyAsync(X.btok, toks, B * sizeof(int), cudaMemcpyHostToDevice, s));
         CHECK(cudaMemcpyAsync(X.pos_arr, poss, B * sizeof(int), cudaMemcpyHostToDevice, s));
         CHECK(cudaMemcpyAsync(X.slot_arr, slots, B * sizeof(int), cudaMemcpyHostToDevice, s));
+        CHECK(cudaGraphLaunch(ex, s));
+        if (out) CHECK(cudaMemcpy2DAsync(out, NVOCAB * sizeof(float), X.logits, NVOCAB_PAD * sizeof(float), NVOCAB * sizeof(float), B,
+                                         cudaMemcpyDeviceToHost, s));
+        CHECK(cudaStreamSynchronize(s));
+    }
+    // same-sequence batch of the sequence in KV slot `slot` (its conv state must have been swapped into slot 0, see swap_conv_state)
+    void batch_slot(int slot, int pos, const int * toks, int B, float * out) {
+        cudaGraphExec_t ex = capture_batch(B);
+        CHECK(cudaMemcpyAsync(X.btok, toks, B * sizeof(int), cudaMemcpyHostToDevice, s));
+        int pa[MB], sa[MB];
+        for (int k = 0; k < B; ++k) { pa[k] = pos + k; sa[k] = slot; }
+        CHECK(cudaMemcpyAsync(X.pos_arr, pa, B * sizeof(int), cudaMemcpyHostToDevice, s));
+        CHECK(cudaMemcpyAsync(X.slot_arr, sa, B * sizeof(int), cudaMemcpyHostToDevice, s));
         CHECK(cudaGraphLaunch(ex, s));
         if (out) CHECK(cudaMemcpy2DAsync(out, NVOCAB * sizeof(float), X.logits, NVOCAB_PAD * sizeof(float), NVOCAB * sizeof(float), B,
                                          cudaMemcpyDeviceToHost, s));

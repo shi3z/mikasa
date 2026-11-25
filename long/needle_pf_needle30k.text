@@ -1,0 +1,5 @@
+<|message_model|><|content_thinking|>The user asks: "Question: What is the secret code mentioned in the document above? Answer with the number only."
+
+I need to find "The secret code is 7391." in the document. Yes, it's there: "The secret code is 7391."
+
+Answer with number only: 7391.<|end_message|><|message_model|><|content_text|>7391<|end_message|><|content_model_end_sampling|>

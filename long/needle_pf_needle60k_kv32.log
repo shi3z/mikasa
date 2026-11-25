@@ -1,0 +1,10 @@
+loaded model to GPU
+[mem] weights loaded                     used 18.61 GB (free 32.28 GB of 50.90 GB)
+[mem] after init_batch (KV + buffers)    used 23.48 GB (free 27.42 GB of 50.90 GB)
+[mem] after init_pf                      used 23.96 GB (free 26.93 GB of 50.90 GB)
+config: lean=1 kv=fp32 maxctx=65536 nslots=1 ring=1040 ref_all=0
+prefill file data/needle60k.txt: 59865 tokens (slot 0)
+fast prefill: last-token argmax 200001
+prefill: 59865 tokens, 2583.8 tokens/s (chunk B=512, GPU time)
+[mem] after prefill                      used 24.02 GB (free 26.88 GB of 50.90 GB)
+generated 65 tokens in 1.19 s (18.3 ms/token incl. host round trip)

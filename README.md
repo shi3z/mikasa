@@ -58,7 +58,32 @@ Validated against sequential `forward_token` (`./mikasa model out --batch-test`)
 | 2 | 15.61 | 128.2 |
 | 4 | 20.24 | 197.6 |
 
-Limits today: context is still MAXT = 1024 positions per sequence; the batch path keeps a second, interleaved copy of the weights (GPU use ~36 GB); one token per sequence per step in multi-sequence mode.
+Limits of the plain batch path: context MAXT = 1024 positions per sequence and a second interleaved weight copy (~36 GB). The long-context mode below removes both.
+
+## Long context and fast prefill (`--lean`, `--pf-fast`)
+
+`--lean --kv16 --nslots 4 --maxctx 65536` runs `forward_batch` with 4 sequence slots of up to 65,536 positions each, without the
+original weight copies: 29.3 GB total (FP16 KV on the 8 full-attention applications; 37.9 GB with FP32 KV). SWA applications use a
+1040-row ring. Full layers use split-KV attention. Decode step (ms, CUDA graph; KV contents synthetic, cost depends on positions only):
+
+| context | 1 sequence | 4 sequences (one token each) |
+|---|---|---|
+| 1K | 13.1 | 21.5 |
+| 8K | 13.2 | 22.3 |
+| 32K | 14.4 | 27.1 |
+| 64K | 16.1 | 33.6 |
+
+`--pf-fast PB` (PB = 512 or 1024) prefills with tensor-core GEMMs (mma, reading the existing Q8_0 / NVFP4 weights), grouped MoE tiles
+and flash-style attention; logits only for the last token. About 11x faster than the 16-token GEMV prefill: 3,300 tok/s at 4K,
+about 2,650 tok/s at 60K (PB=512; 2,900-3,700 at PB=1024; old path 250-300).
+
+Validation (details and logs in `long/`): oracle test passes (argmax equal at every position, max rel 6e-6); needle-in-a-haystack
+at 30K and 60K returns the right answer for FP16 and FP32 KV; teacher-forced 32-step continuation after a 4096-token prefill: 0 argmax
+mismatches vs the old prefill (relative logit L2 7.6 % mean, about the size of the FP16-KV vs FP32-KV difference of the old path).
+Caveats: FP16 KV changes the argmax at ~1.3-1.9 % of positions versus FP32 KV (rounding, not a bug); prefill rounds activations to FP16;
+splitting a prompt at a position that is not a multiple of 256 changes logits at noise level or more; `--lean` has no `forward_token` /
+`--batch-test` (use the non-lean build for the oracle test); B=32 and position 65535 itself are untested. Reproduce with `tools/run_all.sh`,
+`tools/run_prefill_all.sh`.
 
 ## OpenAI-compatible front end (`server/`)
 
