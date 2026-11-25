@@ -5,6 +5,39 @@ It memory-maps the GGUF model (`unsloth/Inkling-2-Mini-GGUF`, `Inkling-2-Mini-UD
 and runs each decode step as one CUDA Graph. llama.cpp is used only as a numerical reference
 (logits and intermediate tensors); it is not used at runtime.
 
+## Benchmark summary (tokens per second, RTX A6000 48 GB, greedy, CUDA Graph)
+
+Every number below was measured on this machine in the sessions that produced the commits; details, logs and caveats are in the sections that follow.
+Decode numbers use synthetic KV contents (cost depends on positions only), prefill numbers use real prompts.
+
+**Decode (generation), tok/s**
+
+| context | 1 sequence | 4 sequences in parallel (aggregate) | per sequence when 4 run |
+|---:|---:|---:|---:|
+| 300 | 80.1 | 198.8 | 49.7 |
+| 1K | 76.6 | 185.9 | 46.5 |
+| 8K | 75.9 | 179.2 | 44.8 |
+| 32K | 69.7 | 147.6 | 36.9 |
+| 64K | 62.3 | 119.2 | 29.8 |
+
+(`--lean --kv16`; 1 sequence = 1000 / ms-per-step. Default single-token path at short context: 82-91 tok/s, see Status and Profile.)
+
+**Prefill (prompt processing), tok/s**
+
+| prompt tokens | old 16-token GEMV path | `--pf-fast 512` | `--pf-fast 1024` |
+|---:|---:|---:|---:|
+| 512 | 306 | 3,510 | 3,527 |
+| 4K | 297 | 3,306 | 3,743 |
+| 16K | 279 | 3,082 | 3,509 |
+| 32K | 265 | 2,893 | 3,269 |
+| 60K | 247 | 2,612-2,652 | 2,916 |
+
+**Multi-token verification (same sequence, B tokens per pass, the basis for speculative decoding), tok/s**
+
+| B | 1 | 2 | 4 | 8 | 16 |
+|---|---:|---:|---:|---:|---:|
+| tok/s | 76 | 141 | 234 | 294 | 330 |
+
 ## Status
 
 | Version | ms/token | tok/s | Notes |
@@ -45,18 +78,18 @@ is above the current 8.5 us per application, and a distilled BVH router matches 
 Validated against sequential `forward_token` (`./mikasa model out --batch-test`): argmax identical at every position of three 326-357 token sequences, max abs logit diff 9e-5, rollback and 2-4 sequence modes included.
 `forward_token` and the default decode path are unchanged (128 generated tokens identical). Details, design notes and caveats: [`batch/RESULTS.md`](batch/RESULTS.md).
 
-| same sequence, B tokens | ms per call | ms per token |
-|---|---:|---:|
-| 1 | 13.19 | 13.19 |
-| 4 | 17.13 | 4.28 |
-| 8 | 27.25 | 3.41 |
-| 16 | 48.45 | 3.03 |
+| same sequence, B tokens | ms per call | ms per token | tok/s |
+|---|---:|---:|---:|
+| 1 | 13.19 | 13.19 | 76 |
+| 4 | 17.13 | 4.28 | 234 |
+| 8 | 27.25 | 3.41 | 294 |
+| 16 | 48.45 | 3.03 | 330 |
 
-| parallel sequences | ms per step | aggregate tok/s |
-|---|---:|---:|
-| 1 | 13.20 | 75.8 |
-| 2 | 15.61 | 128.2 |
-| 4 | 20.24 | 197.6 |
+| parallel sequences | ms per step | aggregate tok/s | per sequence tok/s |
+|---|---:|---:|---:|
+| 1 | 13.20 | 75.8 | 75.8 |
+| 2 | 15.61 | 128.2 | 64.1 |
+| 4 | 20.24 | 197.6 | 49.4 |
 
 Limits of the plain batch path: context MAXT = 1024 positions per sequence and a second interleaved weight copy (~36 GB). The long-context mode below removes both.
 
