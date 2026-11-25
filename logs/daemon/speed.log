@@ -1,0 +1,8 @@
+== speed
+  chat (new code)    run 0: prompt 39 (cached 0), 600 tokens, ttft 0.07s, decode 78.2 tok/s (daemon), wall 77.9 tok/s incl ttft; finish length
+  chat (new code)    run 1: prompt 39 (cached 0), 600 tokens, ttft 0.07s, decode 82.0 tok/s (daemon), wall 81.6 tok/s incl ttft; finish length
+  edit (copy-heavy)  run 0: prompt 2143 (cached 0), 1500 tokens, ttft 0.72s, decode 195.2 tok/s (daemon), wall 179.1 tok/s incl ttft; finish length
+  edit (copy-heavy)  run 1: prompt 2143 (cached 2048), 1500 tokens, ttft 0.10s, decode 195.9 tok/s (daemon), wall 194.2 tok/s incl ttft; finish length
+  4 concurrent streams (2 chat + 2 edit), temperature 1.0:
+   3200 tokens in 19.6 s wall = 163.4 tok/s aggregate (incl. prefill); per stream daemon decode tok/s: [41.1, 41.3, 41.4, 43.5]; multi_steps [798, 799, 799, 790]
+  4 x identical chat prompt (same prefix, different sampling): 2800 tokens in 15.4 s = 181.8 tok/s aggregate; per stream decode: [46.1, 45.8, 45.7, 45.9]

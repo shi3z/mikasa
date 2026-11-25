@@ -1,0 +1,54 @@
+loaded model to GPU
+[mem] weights loaded                     used 18.61 GB (free 32.28 GB of 50.90 GB)
+[mem] after init_batch (KV + buffers)    used 29.29 GB (free 21.61 GB of 50.90 GB)
+[mem] after init_pf                      used 29.77 GB (free 21.13 GB of 50.90 GB)
+[daemon] capturing graphs and measuring step costs ...
+[daemon] step cost (ms, launch+sync) by B: 1:13.10 2:15.10 3:18.44 4:20.07 5:25.00 6:27.71 7:29.84 8:31.93 9:39.13 10:41.25 11:43.44 12:45.80 13:48.77 14:51.32 15:53.38 16:55.85
+[daemon] warmup 8.1 s
+[mem] after warmup                       used 30.27 GB (free 20.63 GB of 50.90 GB)
+[daemon] snapshot = 340.8 MB ring + 3.8 MB conv; max 24 snapshots = 8.27 GB
+[daemon] ready: socket /tmp/mikasa-test.sock, n_ctx 65536, slots 4, spec K=15 copy=4
+[daemon] slot 0 id=r1 length: prompt 2026 cached 0 (none) gen 500, prefill 606 ms, decode 103.4 tok/s
+[daemon] slot 0 id=r2 length: prompt 2026 cached 1536 (snapshot) gen 500, prefill 153 ms, decode 76.2 tok/s
+[daemon] slot 1 id=r3 length: prompt 3208 cached 0 (none) gen 500, prefill 1002 ms, decode 201.3 tok/s
+[daemon] slot 1 id=r4 length: prompt 3208 cached 3072 (snapshot) gen 500, prefill 78 ms, decode 76.2 tok/s
+[daemon] slot 2 id=r5 stop: prompt 3315 cached 0 (none) gen 85, prefill 1044 ms, decode 103.8 tok/s
+[daemon] slot 2 id=r6 stop: prompt 3315 cached 3072 (snapshot) gen 85, prefill 99 ms, decode 76.0 tok/s
+[daemon] slot 3 id=r7 length: prompt 92 cached 0 (none) gen 500, prefill 59 ms, decode 85.3 tok/s
+[daemon] slot 0 id=r8 length: prompt 92 cached 0 (none) gen 500, prefill 59 ms, decode 79.0 tok/s
+[daemon] slot 1 id=r9 length: prompt 95 cached 0 (none) gen 500, prefill 59 ms, decode 90.3 tok/s
+[daemon] slot 2 id=r10 length: prompt 95 cached 0 (none) gen 500, prefill 59 ms, decode 79.0 tok/s
+[daemon] slot 3 id=r11 cancelled: prompt 92 cached 0 (none) gen 41, prefill 60 ms, decode 84.2 tok/s
+[daemon] slot 0 id=r12 cancelled: prompt 92 cached 0 (none) gen 41, prefill 59 ms, decode 84.1 tok/s
+[daemon] slot 1 id=r13 cancelled: prompt 26006 cached 0 (none) gen 0, prefill 0 ms, decode 0.0 tok/s
+[daemon] slot 2 id=r14 length: prompt 92 cached 0 (none) gen 50, prefill 62 ms, decode 83.3 tok/s
+[daemon] slot 0 id=r16 stop: prompt 3315 cached 0 (none) gen 85, prefill 3281 ms, decode 39.1 tok/s
+[daemon] slot 2 id=r18 length: prompt 92 cached 0 (none) gen 500, prefill 362 ms, decode 38.8 tok/s
+[daemon] slot 1 id=r17 length: prompt 2026 cached 0 (none) gen 500, prefill 2249 ms, decode 44.2 tok/s
+[daemon] slot 3 id=r15 length: prompt 3208 cached 0 (none) gen 500, prefill 3646 ms, decode 49.4 tok/s
+[daemon] slot 0 id=r19 length: prompt 122 cached 0 (none) gen 500, prefill 66 ms, decode 43.9 tok/s
+[daemon] slot 3 id=r22 length: prompt 96 cached 0 (none) gen 500, prefill 62 ms, decode 44.1 tok/s
+[daemon] slot 2 id=r20 length: prompt 95 cached 0 (none) gen 500, prefill 139 ms, decode 44.3 tok/s
+[daemon] slot 1 id=r21 length: prompt 92 cached 0 (none) gen 500, prefill 218 ms, decode 44.6 tok/s
+[daemon] slot 0 id=r23 length: prompt 6861 cached 0 (none) gen 120, prefill 2187 ms, decode 101.8 tok/s
+[daemon] slot 3 id=r24 length: prompt 6861 cached 0 (none) gen 120, prefill 2192 ms, decode 101.7 tok/s
+[daemon] slot 0 id=r25 length: prompt 6880 cached 6656 (snapshot) gen 120, prefill 99 ms, decode 95.8 tok/s
+[daemon] slot 2 id=r26 length: prompt 6880 cached 0 (none) gen 120, prefill 2195 ms, decode 95.9 tok/s
+[daemon] slot 0 id=r27 length: prompt 6900 cached 6656 (snapshot) gen 120, prefill 102 ms, decode 109.0 tok/s
+[daemon] slot 1 id=r28 length: prompt 6900 cached 0 (none) gen 120, prefill 2201 ms, decode 109.0 tok/s
+[daemon] slot 0 id=r29 length: prompt 6861 cached 6656 (snapshot) gen 120, prefill 95 ms, decode 101.6 tok/s
+[daemon] slot 0 id=r30 length: prompt 6876 cached 6656 (snapshot) gen 100, prefill 98 ms, decode 89.3 tok/s
+[daemon] slot 3 id=r31 length: prompt 6876 cached 0 (none) gen 100, prefill 2199 ms, decode 89.4 tok/s
+[daemon] slot 0 id=r32 length: prompt 6876 cached 6656 (snapshot) gen 100, prefill 98 ms, decode 103.1 tok/s
+[daemon] slot 2 id=r33 length: prompt 6876 cached 0 (none) gen 100, prefill 2198 ms, decode 103.1 tok/s
+[daemon] slot 1 id=r34 length: prompt 2026 cached 0 (none) gen 60, prefill 623 ms, decode 108.2 tok/s
+[daemon] slot 1 id=r35 length: prompt 2086 cached 2085 (resident) gen 100, prefill 24 ms, decode 99.8 tok/s
+[daemon] slot 3 id=r36 length: prompt 2086 cached 0 (none) gen 100, prefill 681 ms, decode 99.7 tok/s
+[daemon] slot 0 id=r37 length: prompt 92 cached 0 (none) gen 300, prefill 60 ms, decode 82.2 tok/s
+[daemon] slot 2 id=r38 length: prompt 92 cached 0 (none) gen 300, prefill 60 ms, decode 82.0 tok/s
+[daemon] slot 1 id=r39 length: prompt 92 cached 0 (none) gen 300, prefill 60 ms, decode 82.5 tok/s
+[daemon] slot 1 id=r43 length: prompt 92 cached 0 (none) gen 200, prefill 61 ms, decode 46.0 tok/s
+[daemon] slot 0 id=r41 length: prompt 92 cached 0 (none) gen 200, prefill 135 ms, decode 46.6 tok/s
+[daemon] slot 3 id=r40 length: prompt 92 cached 0 (none) gen 200, prefill 212 ms, decode 47.3 tok/s
+[daemon] slot 2 id=r42 length: prompt 92 cached 0 (none) gen 200, prefill 290 ms, decode 48.0 tok/s
+[daemon] slot 1 id=r46 length: prompt 65000 cached 0 (none) gen 537, prefill 25618 ms, decode 207.2 tok/s

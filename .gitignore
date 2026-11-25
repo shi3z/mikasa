@@ -1,3 +1,7 @@
 __pycache__/
 /mikasa
 out*/
+/mikasa_daemon
+/mikasa_spec
+/mikasa_pf
+/mikasa_long

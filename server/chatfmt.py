@@ -7,7 +7,7 @@ Prompt: the official chat_template.jinja (via transformers) -> token ids. The te
     <|message_model|> NAME <|content_invoke_tool_json|> {"name":"NAME","args":{...}} <|end_message|>
     <|content_model_end_sampling|>            (id 200006: stop)
 """
-import json, os
+import json, os, threading
 from tokenizers import Tokenizer
 
 TOKDIR = os.environ.get("INKLING_TOK_DIR", os.path.expanduser("~/rrr/inkling-tok"))
@@ -16,9 +16,17 @@ STOP_IDS = (T_STOP, T_EOT)
 
 _tk = None
 _at = None
+TOK_LOCK = threading.RLock()      # the HF tokenizer / chat template objects are not safe to share between request threads ("Already borrowed")
+class _Locked:
+    def __init__(self, t): self._t = t
+    def encode(self, *a, **k):
+        with TOK_LOCK: return self._t.encode(*a, **k)
+    def decode(self, *a, **k):
+        with TOK_LOCK: return self._t.decode(*a, **k)
 def tokenizer():
     global _tk
-    if _tk is None: _tk = Tokenizer.from_file(os.path.join(TOKDIR, "tokenizer.json"))
+    with TOK_LOCK:
+        if _tk is None: _tk = _Locked(Tokenizer.from_file(os.path.join(TOKDIR, "tokenizer.json")))
     return _tk
 def _template():
     global _at
@@ -51,8 +59,9 @@ def _fix_messages(messages):
 def render_prompt(messages, tools=None, reasoning_effort=None):
     kw = {}
     if reasoning_effort is not None: kw["reasoning_effort"] = reasoning_effort
-    text = _template().apply_chat_template(_fix_messages(messages), tools=tools or None, tokenize=False, add_generation_prompt=True, **kw)
-    return tokenizer().encode(text, add_special_tokens=False).ids
+    with TOK_LOCK:
+        text = _template().apply_chat_template(_fix_messages(messages), tools=tools or None, tokenize=False, add_generation_prompt=True, **kw)
+        return tokenizer().encode(text, add_special_tokens=False).ids
 
 
 class Detok:

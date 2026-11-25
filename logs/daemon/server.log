@@ -1,0 +1,29 @@
+loaded model to GPU
+[mem] weights loaded                     used 18.61 GB (free 32.28 GB of 50.90 GB)
+[mem] after init_batch (KV + buffers)    used 29.29 GB (free 21.61 GB of 50.90 GB)
+[mem] after init_pf                      used 29.77 GB (free 21.13 GB of 50.90 GB)
+[daemon] capturing graphs and measuring step costs ...
+[daemon] step cost (ms, launch+sync) by B: 1:13.15 2:15.26 3:18.69 4:20.40 5:25.37 6:28.11 7:30.54 8:32.54 9:39.94 10:42.11 11:44.38 12:46.79 13:49.59 14:52.24 15:54.37 16:56.82
+[daemon] warmup 8.2 s
+[mem] after warmup                       used 30.27 GB (free 20.63 GB of 50.90 GB)
+[daemon] snapshot = 340.8 MB ring + 3.8 MB conv; max 24 snapshots = 8.27 GB
+[daemon] ready: socket /tmp/mikasa-test.sock, n_ctx 65536, slots 4, spec K=15 copy=4
+mikasa server on http://127.0.0.1:8791  engine=daemon n_ctx=65536
+You are using a model of type `inkling2_loop` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+[daemon] slot 0 id=r1 stop: prompt 21 cached 0 (none) gen 101, prefill 36 ms, decode 80.4 tok/s
+[daemon] slot 1 id=r2 stop: prompt 107 cached 0 (none) gen 69, prefill 61 ms, decode 88.8 tok/s
+[daemon] slot 2 id=r3 stop: prompt 107 cached 0 (none) gen 215, prefill 61 ms, decode 84.8 tok/s
+[daemon] slot 3 id=r4 stop: prompt 31 cached 0 (none) gen 130, prefill 40 ms, decode 85.6 tok/s
+[daemon] slot 0 id=r5 cancelled: prompt 25 cached 0 (none) gen 34, prefill 38 ms, decode 87.4 tok/s
+[daemon] slot 1 id=r6 length: prompt 39 cached 0 (none) gen 600, prefill 44 ms, decode 78.2 tok/s
+[daemon] slot 2 id=r7 length: prompt 39 cached 0 (none) gen 600, prefill 44 ms, decode 82.0 tok/s
+[daemon] slot 3 id=r8 length: prompt 2143 cached 0 (none) gen 1500, prefill 688 ms, decode 195.2 tok/s
+[daemon] slot 3 id=r9 length: prompt 2143 cached 2048 (snapshot) gen 1500, prefill 67 ms, decode 195.9 tok/s
+[daemon] slot 0 id=r10 length: prompt 39 cached 0 (none) gen 800, prefill 45 ms, decode 41.1 tok/s
+[daemon] slot 3 id=r11 length: prompt 2143 cached 2048 (snapshot) gen 800, prefill 68 ms, decode 41.3 tok/s
+[daemon] slot 2 id=r13 length: prompt 39 cached 0 (none) gen 800, prefill 129 ms, decode 41.4 tok/s
+[daemon] slot 1 id=r12 length: prompt 2143 cached 0 (none) gen 800, prefill 1142 ms, decode 43.5 tok/s
+[daemon] slot 3 id=r15 length: prompt 39 cached 0 (none) gen 700, prefill 44 ms, decode 45.7 tok/s
+[daemon] slot 2 id=r16 length: prompt 39 cached 0 (none) gen 700, prefill 45 ms, decode 45.8 tok/s
+[daemon] slot 1 id=r17 length: prompt 39 cached 0 (none) gen 700, prefill 105 ms, decode 45.9 tok/s
+[daemon] slot 0 id=r14 length: prompt 39 cached 0 (none) gen 700, prefill 225 ms, decode 46.1 tok/s

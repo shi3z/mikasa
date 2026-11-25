@@ -1,0 +1,66 @@
+daemon: {'n_ctx': 65536, 'nslots': 4, 'spec_k': 15, 'spec_copy': 4, 'snaps_max': 24}
+== exact: daemon greedy vs old plain greedy loop (500 tokens), speculation on (default) and off (spec_k=0)
+  edit_whole_py_direct spec          IDENTICAL (len 500 vs 500)
+      prefill 606 ms, ttft 606 ms, 103.4 tok/s, steps 305 (multi 0) drafted 335 accepted 194, cache=none
+  edit_whole_py_direct plain(spec_k=0) IDENTICAL (len 500 vs 500)
+      prefill 153 ms, ttft 154 ms, 76.2 tok/s, steps 499 (multi 0) drafted 0 accepted 0, cache=snapshot
+  editcopy_jsonl_direct spec         IDENTICAL (len 500 vs 500)
+      prefill 1002 ms, ttft 1002 ms, 201.3 tok/s, steps 82 (multi 0) drafted 508 accepted 417, cache=none
+  editcopy_jsonl_direct plain(spec_k=0) IDENTICAL (len 500 vs 500)
+      prefill 78 ms, ttft 79 ms, 76.2 tok/s, steps 499 (multi 0) drafted 0 accepted 0, cache=snapshot
+  shell_script_direct spec           IDENTICAL (len 85 vs 85)
+      prefill 1044 ms, ttft 1045 ms, 103.8 tok/s, steps 47 (multi 0) drafted 79 accepted 38, cache=none
+  shell_script_direct plain(spec_k=0) IDENTICAL (len 85 vs 85)
+      prefill 99 ms, ttft 100 ms, 76.0 tok/s, steps 84 (multi 0) drafted 0 accepted 0, cache=snapshot
+  gen_py_lru_direct spec             IDENTICAL (len 500 vs 500)
+      prefill 59 ms, ttft 60 ms, 85.3 tok/s, steps 436 (multi 0) drafted 151 accepted 63, cache=none
+  gen_py_lru_direct plain(spec_k=0)  IDENTICAL (len 500 vs 500)
+      prefill 59 ms, ttft 60 ms, 79.0 tok/s, steps 499 (multi 0) drafted 0 accepted 0, cache=none
+  reason_math spec                   IDENTICAL (len 500 vs 500)
+      prefill 59 ms, ttft 59 ms, 90.3 tok/s, steps 403 (multi 0) drafted 202 accepted 96, cache=none
+  reason_math plain(spec_k=0)        IDENTICAL (len 500 vs 500)
+      prefill 59 ms, ttft 59 ms, 79.0 tok/s, steps 499 (multi 0) drafted 0 accepted 0, cache=none
+== cancel
+  cancel during decode: active slots after 0.3 s = 0
+  cancel -> final message after 12.6 ms (finish=cancelled, 41 tokens)
+  cancel during prefill of 26006 tokens: final after 117.1 ms (finish=cancelled, n_gen=0)
+  next request after cancel ok: 50 tokens, finish=length; active=0
+== 4 concurrent greedy requests vs the plain single-sequence reference
+  edit_whole_py_direct               IDENTICAL (len 500 vs 500)
+      prefill 2249 ms, ttft 2396 ms, 44.2 tok/s, steps 0 (multi 499) drafted 0 accepted 0, cache=none
+  editcopy_jsonl_direct              IDENTICAL (len 500 vs 500)
+      prefill 3646 ms, ttft 3647 ms, 49.4 tok/s, steps 4 (multi 488) drafted 7 accepted 7, cache=none
+  shell_script_direct                IDENTICAL (len 85 vs 85)
+      prefill 3281 ms, ttft 3428 ms, 39.1 tok/s, steps 0 (multi 84) drafted 0 accepted 0, cache=none
+  gen_py_lru_direct                  IDENTICAL (len 500 vs 500)
+      prefill 362 ms, ttft 509 ms, 38.8 tok/s, steps 17 (multi 481) drafted 10 accepted 1, cache=none
+  total 1585 tokens in 13.75 s wall (includes prefill) = 115.3 tok/s aggregate
+  4 x short prompt, up to 500 tokens: 2000 tokens in 11.49 s = 174.1 tok/s aggregate; per request decode tok/s: 44.6 44.1 43.9 44.3
+== prefix cache: 3-turn conversation (render_prompt), cache vs no_cache (greedy, 120 tokens each)
+  turn 1: prompt 6861 tokens | cached run: n_cached 0 (none), prefill 2187 ms, ttft 2188 ms | no_cache run: n_cached 0, prefill 2192 ms, ttft 2193 ms
+  turn 1 generated tokens            IDENTICAL (len 120 vs 120)
+  turn 2: prompt 6880 tokens | cached run: n_cached 6656 (snapshot), prefill 99 ms, ttft 99 ms | no_cache run: n_cached 0, prefill 2195 ms, ttft 2196 ms
+  turn 2 generated tokens            IDENTICAL (len 120 vs 120)
+  turn 3: prompt 6900 tokens | cached run: n_cached 6656 (snapshot), prefill 102 ms, ttft 103 ms | no_cache run: n_cached 0, prefill 2201 ms, ttft 2201 ms
+  turn 3 generated tokens            IDENTICAL (len 120 vs 120)
+== branch: same first turn, different follow-up (restore from a snapshot taken during turn 1)
+  branch 0: prompt 6876, n_cached 6656 (snapshot), prefill 98 ms vs 2199 ms uncached
+  branch 0 generated tokens          IDENTICAL (len 100 vs 100)
+  branch 1: prompt 6876, n_cached 6656 (snapshot), prefill 98 ms vs 2198 ms uncached
+  branch 1 generated tokens          IDENTICAL (len 100 vs 100)
+== resident continuation: prompt = previous prompt + its 60-token output (resume at an unaligned position, 1 token left to prefill)
+  prompt 2086, n_cached 2085 (resident), prefill 24 ms vs 681 ms uncached
+  resident continuation tokens       IDENTICAL (len 100 vs 100)
+  cache results all identical: True
+== sampling (temperature 1.0)
+  same seed twice                    IDENTICAL (len 300 vs 300)
+  other seed differs from first at token 1 ; tok/s 82.2
+  text: Here's the implementation module:  ```python """Thread-safe LRU cache with TTL support.""" from __future__ import annotations  import functools import threading import time from collections import Ord
+  4 concurrent sampled requests: lengths [200, 200, 200, 200] finish ['length', 'length', 'length', 'length'] multi_steps [199, 199, 198, 198]
+  top_p=0.9 rejected: top_p < 1 is not supported by the mikasa daemon (use top_p=1)
+  top_k=40 rejected: top_k > 0 is not supported by the mikasa daemon (use top_k=0)
+== context limit (n_ctx 65536)
+  prompt 65535 rejected: prompt too long for the context (65535 + 2 > 65536)
+  prompt 70536 rejected: prompt too long for the context (70536 + 2 > 65536)
+  prompt 65000, max_new 2000: generated 537 tokens, finish=length, prefill 25.6 s (2537 tok/s), decode 207.2 tok/s
+final stats: {'op': 'stats', 'build': 'mikasa-daemon', 'n_ctx': 65536, 'nslots': 4, 'spec_k': 15, 'spec_copy': 4, 'snaps_max': 24, 'snaps_alloc': 4, 'snaps_live': 1, 'active': 0, 'requests': 46, 'done': 44, 'prompt_tokens': 200289, 'cached_tokens': 43045, 'gen_tokens': 11624, 'snap_taken': 15, 'snap_restored': 8, 'resident_hits': 1, 'gpu_used_mb': 30282, 'uptime_s': 162.2}

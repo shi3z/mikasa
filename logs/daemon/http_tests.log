@@ -1,0 +1,18 @@
+== basic
+/health (200, {'status': 'ok'})
+/props n_ctx 65536 slots 4 build mikasa
+non-stream: stop reasoning 337 chars content: 'Hello, how are you today?' {'prompt_tokens': 21, 'completion_tokens': 101, 'total_tokens': 122, 'prompt_tokens_details': {'cached_tokens': 0}, 'timings': {'queue_ms': 0.434, 'prefill_ms': 36.433, 'ttft_ms': 36.866, 'decode_ms': 1243.296, 'decode_tps': 80.431, 'cache': 'none', 'steps': 94, 'multi_steps': 0, 'drafted': 31, 'accepted': 6}}
+== tools
+non-stream: tool_calls reasoning 147 chars tool_calls [('bash', '{"command":"ls -la"}')]
+stream    : tool_calls reasoning 619 chars tool_calls [{'name': 'bash', 'args': '{"command":"ls -1"}'}] content '' usage {'prompt_tokens': 107, 'completion_tokens': 215, 'total_tokens': 322, 'prompt_tokens_details': {'cached_tokens': 0}, 'timings': {'queue_ms': 0.274, 'prefill_ms': 60.718, 'ttft_ms': 60.992, 'decode_ms': 2522.858, 'decode_tps': 84.824, 'cache': 'none', 'steps': 179, 'multi_steps': 0, 'drafted': 117, 'accepted': 35}}
+== stream
+stream: finish stop ttft 0.07s total 1.55s reasoning 380 chars, content '391' {'prompt_tokens': 31, 'completion_tokens': 130, 'total_tokens': 161, 'prompt_tokens_details': {'cached_tokens': 0}, 'timings': {'queue_ms': 0.306, 'prefill_ms': 40.088, 'ttft_ms': 40.395, 'decode_ms': 1506.936, 'decode_tps': 85.604, 'cache': 'none', 'steps': 113, 'multi_steps': 0, 'drafted': 37, 'accepted': 16}}
+== cancel
+client disconnect after 30 chunks: engine active slots = 0 after 0.05 s
+== reject
+  {'top_p': 0.9}         -> HTTP 400 top_p < 1 is not supported by the mikasa daemon (use top_p=1)
+  {'top_k': 40}          -> HTTP 400 top_k > 0 is not supported by the mikasa daemon (use top_k=0)
+  {'stop': ['x']}        -> HTTP 400 'stop' strings are not supported (the model's own stop tokens are used)
+  {'presence_penalty': 0.5} -> HTTP 400 presence_penalty is not supported
+  {'min_p': 0.1}         -> HTTP 400 min_p is not supported
+  70000-word prompt     -> HTTP 400 the request exceeds the available context size (65536 tokens, prompt 70016)

@@ -47,14 +47,15 @@ __device__ __forceinline__ float spec_gumbel(unsigned h) {
 __device__ __forceinline__ float spec_u01(unsigned h) { return ((h >> 9) + 0.5f) * (1.0f / 8388608.0f); }   // (0,1), max = 1 - 2^-24 (used for the accept test only)
 
 __global__ void k_spec_sample(const float * __restrict__ logits_all, int n, int stride, const int * __restrict__ dr, const float * __restrict__ prm,
-                              int * __restrict__ acc, int * __restrict__ tok) {
+                              int * __restrict__ acc, int * __restrict__ tok, int prm_stride) {
     __shared__ float red[32];
     __shared__ float rv[32];
     __shared__ int ri[32];
     const int row = blockIdx.x, lane = threadIdx.x & 31, wid = threadIdx.x >> 5, nw = blockDim.x >> 5;
     const float * lg = logits_all + (size_t) row * stride;
-    const float invT = prm[0];
-    const unsigned seed = __float_as_uint(prm[1]), step = __float_as_uint(prm[2]);
+    const float * pr = prm + (size_t) row * prm_stride;      // prm_stride 0: one parameter set for all rows; else per-row (invT, seed bits, step bits)
+    const float invT = pr[0];
+    const unsigned seed = __float_as_uint(pr[1]), step = __float_as_uint(pr[2]);
     const int d = dr[row];
     float mx = -INFINITY;
     for (int i = threadIdx.x; i < n; i += blockDim.x) mx = fmaxf(mx, lg[i]);
@@ -171,7 +172,7 @@ struct SpecRunner {
         }
         forward_batch(g, X, B, 0, s);
         if (samp) {
-            k_spec_sample<<<B, 1024, 0, s>>>(X.logits, NVOCAB, NVOCAB_PAD, d_dr, d_prm, d_acc, d_stok);
+            k_spec_sample<<<B, 1024, 0, s>>>(X.logits, NVOCAB, NVOCAB_PAD, d_dr, d_prm, d_acc, d_stok, 0);
             CHECK(cudaMemcpyAsync(h_acc, d_acc, B * 4, cudaMemcpyDeviceToHost, s));
             CHECK(cudaMemcpyAsync(h_stok, d_stok, B * 4, cudaMemcpyDeviceToHost, s));
         } else
@@ -240,7 +241,7 @@ static void run_spec_sampler_test(Engine & g, BatchState & X, SpecRunner & SR, c
             float prm[3] = {1.0f / T, 0, 0}; unsigned sd = 12345u + dcase, st = t;
             std::memcpy(&prm[1], &sd, 4); std::memcpy(&prm[2], &st, 4);
             CHECK(cudaMemcpy(pp, prm, 12, cudaMemcpyHostToDevice));
-            k_spec_sample<<<1, 1024, 0, s>>>(X.logits, NVOCAB, NVOCAB_PAD, dd, pp, aa, tt);
+            k_spec_sample<<<1, 1024, 0, s>>>(X.logits, NVOCAB, NVOCAB_PAD, dd, pp, aa, tt, 0);
             int a, tk2;
             CHECK(cudaMemcpy(&a, aa, 4, cudaMemcpyDeviceToHost)); CHECK(cudaMemcpy(&tk2, tt, 4, cudaMemcpyDeviceToHost));
             nacc += a; hist[a ? d : tk2]++;

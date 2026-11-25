@@ -142,10 +142,28 @@ is chosen per step from measured step costs and online acceptance estimates, so 
 * `--temp T --seed S`: rejection-sampling verification (accept a draft with probability p(d)), chi-square tested; no top-k/top-p/penalties, not combined with the wide path.
 * Not tested: more than one slot with speculation, `--kv32`, wide path beyond ~25K context. One run per cell, synthetic prompts. Full tables, sweeps and the honest list: [`spec/RESULTS_spec.md`](spec/RESULTS_spec.md); reproduce with `tools/run_spec_all.sh`.
 
+## Resident daemon (`mikasa --serve`) and the OpenAI server
+
+`mikasa --serve` (built from the same sources; defaults `--lean --kv16 --nslots 4 --maxctx 65536 --pf-fast 512 --spec 15 --spec-copy 4`, `--spec-wide` off) loads the model once and serves JSON-line requests on a unix socket.
+`server/mikasa_server.py --engine daemon --launch-daemon --model GGUF` exposes it as an OpenAI-compatible endpoint (streaming, tool calls, reasoning split, `/props` with `n_ctx` and slots); the web console preset `mikasa` uses port 8767 like the llama-server preset.
+Design, protocol, flags, numbers and the list of limits: [`DAEMON.md`](DAEMON.md); reproduce with `tools/run_daemon_tests.sh`.
+
+* One generating request: n-gram/copy speculation (exact greedy). Two or more: plain multi-sequence steps (no speculation). Up to 4 concurrent requests; cancel frees the slot in 13 ms (decode) / 117 ms (26K-token prefill).
+* Prefix cache: a request goes to the slot with the longest reusable prefix. Resident (prompt extends the slot's history) or snapshot (conv state + SWA ring at a multiple of 512, 345 MB each, 24 by default) restore: a 6,880-token turn
+  prefills in 99 ms instead of 2,195 ms; generated tokens identical to the uncached run (greedy) in all 7 restores tested.
+* Only pure temperature sampling (`top_p=1`, `top_k=0`); other values are rejected with HTTP 400.
+
+| through the server / socket | tok/s |
+|---|---:|
+| 1 stream, chat (T=1.0) | 78-82 |
+| 1 stream, copy-heavy edit (greedy, speculation) | 201 |
+| 4 concurrent streams, aggregate (short prompts) | 174 (about 44 per stream) |
+| prefill, 7K / 65K prompt | 3,150 / 2,540 |
+
 ## OpenAI-compatible front end (`server/`)
 
 `server/chatfmt.py` renders the official chat template and parses the model's output stream into `reasoning_content`, `content` and streamed `tool_calls`;
-`server/mikasa_server.py` serves `/v1/chat/completions` (stream or not) with an engine adapter (`server/engines.py`). Only a mock engine is wired up so far (protocol tests against the harness client); the real engine adapter is not written yet.
+`server/mikasa_server.py` serves `/v1/chat/completions` (stream or not) with an engine adapter (`server/engines.py`). The real engine is the resident daemon (`mikasa --serve`, `server/daemon_engine.py`); see [`DAEMON.md`](DAEMON.md) (protocol, prefix cache, measured results, limits).
 
 ## Layout
 

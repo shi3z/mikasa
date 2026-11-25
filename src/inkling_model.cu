@@ -542,6 +542,7 @@ static void set_pos_tok(Engine & g, int pos, int tok, cudaStream_t s) {
 #include "prefill_host.inc"
 #include "spec_host.inc"
 #include "long_host.inc"
+#include "daemon_host.inc"
 
 int main(int argc, char ** argv) {
     if (argc < 3) { std::fprintf(stderr, "usage: inkling_model model.gguf outdir [--tokens a,b] [--gen N] [--reps N] [--dump]\n"); return 2; }
@@ -552,7 +553,10 @@ int main(int argc, char ** argv) {
     std::string probe = "probe";
     int bench_b = 0, bench_pos = 300;
     LongArgs LA;
-    bool long_mode = false;
+    bool long_mode = false, serve = false;
+    for (int i = 3; i < argc; ++i) if (std::strcmp(argv[i], "--serve") == 0) {   // daemon defaults (overridable by the flags below)
+        serve = true; g_lean = true; long_mode = true; LA.kv16 = true; LA.maxctx = 65536; LA.nslots = 4; LA.pf_fast = 512; LA.spec.k = 15; LA.spec.copy_min = 4; LA.spec.m = 1;
+    }
     std::string cmpa, cmpb; int cmpk = 0;
     for (int i = 3; i < argc; ++i) {
         if (std::strcmp(argv[i], "--tokens") == 0 && i + 1 < argc) {
@@ -568,6 +572,13 @@ int main(int argc, char ** argv) {
         else if (std::strcmp(argv[i], "--probe") == 0 && i + 1 < argc) probe = argv[++i];
         else if (std::strcmp(argv[i], "--bench-b") == 0 && i + 1 < argc) bench_b = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--bench-pos") == 0 && i + 1 < argc) bench_pos = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--serve") == 0) {}
+        else if (std::strcmp(argv[i], "--sock") == 0 && i + 1 < argc) g_dargs.sock = argv[++i];
+        else if (std::strcmp(argv[i], "--tcp") == 0 && i + 1 < argc) g_dargs.tcp = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--snaps") == 0 && i + 1 < argc) g_dargs.snaps = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--snap-end") == 0) g_dargs.snap_end = true;
+        else if (std::strcmp(argv[i], "--pf-chunk") == 0 && i + 1 < argc) g_dargs.chunk = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--quiet") == 0) g_dargs.quiet = 1;
         else if (std::strcmp(argv[i], "--lean") == 0) { g_lean = true; long_mode = true; }
         else if (std::strcmp(argv[i], "--long") == 0) long_mode = true;
         else if (std::strcmp(argv[i], "--kv32") == 0) LA.kv16 = false;
@@ -623,6 +634,7 @@ int main(int argc, char ** argv) {
     std::printf("loaded model to GPU\n");
     cudaStream_t s;
     CHECK(cudaStreamCreate(&s));
+    if (serve) return run_serve(g, LA, s);
     if (long_mode) return run_long(g, LA, s);
     if (batch_test) return run_batch_test(g, probe, s);
     if (batch_bench) return run_batch_bench(g, probe, s, bench_b, bench_pos);

@@ -3,6 +3,9 @@ generate(prompt_ids, max_new, sampling, cancel_event) -> iterator of ints; it mu
 import os, time, threading
 
 class MockEngine:
+    concurrent = False; nslots = 1
+    def stats_dict(self): return self.stats()
+    def validate(self, sampling): pass
     """Replays a fixed token sequence at a given speed: tests the HTTP/parse/stream path without a GPU."""
     def __init__(self, n_ctx=65536, tps=90.0, script=None):
         self.n_ctx = n_ctx; self.dt = 1.0 / tps; self.n = 0
@@ -22,5 +25,6 @@ def make_engine(kind, **kw):
     if kind == "mock": return MockEngine(n_ctx=kw.get("n_ctx", 65536), tps=kw.get("tps", 90.0))
     if kind == "daemon":
         from daemon_engine import DaemonEngine
-        return DaemonEngine(model=kw["model"], n_ctx=kw.get("n_ctx", 65536))
+        return DaemonEngine(model=kw.get("model"), n_ctx=kw.get("n_ctx", 65536), sock=kw.get("sock"), launch=kw.get("launch", False), daemon_bin=kw.get("daemon_bin"),
+                            daemon_args=kw.get("daemon_args", ()), log_path=kw.get("daemon_log"), wait=kw.get("wait", 900))
     raise SystemExit("unknown engine " + kind)
