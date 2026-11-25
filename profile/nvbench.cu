@@ -46,6 +46,33 @@ int main() {
                 else { if (st) { if (wpb == 4) nv_v1<36, true, 4><<<g, 128, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); else if (wpb == 2) nv_v1<36, true, 2><<<g, 64, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); else nv_v1<36, true, 8><<<g, 256, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); }
                        else { if (wpb == 4) nv_v1<36, false, 4><<<g, 128, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); else if (wpb == 2) nv_v1<36, false, 2><<<g, 64, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); else nv_v1<36, false, 8><<<g, 256, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); } } });
         }
+        // V2: persistent wave-aligned grid. G = blocks per slot so that all blocks of all slots are resident at once.
+        for (int wpb : {4, 8}) {
+            int per_sm = 0; const int NSM = 84;
+            auto kfn = (c.K == 2304) ? (wpb == 4 ? (const void *) nv_v2<72, 4> : (const void *) nv_v2<72, 8>) : (wpb == 4 ? (const void *) nv_v2<36, 4> : (const void *) nv_v2<36, 8>);
+            cudaFuncSetAttribute(kfn, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) smem);
+            cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per_sm, kfn, wpb * 32, smem);
+            for (int mult : {1, 2}) {
+                int G = std::max(1, per_sm * NSM / 8 * mult);
+                char nm[64]; snprintf(nm, 64, "v2 wpb=%d resident/SM=%d G=%d", wpb, per_sm, G);
+                runv(nm, [&](int i, int slots) { const int * idp = ids + (i % 16) * 64; dim3 g(G, slots);
+                    if (c.K == 2304) { if (wpb == 4) nv_v2<72, 4><<<g, 128, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); else nv_v2<72, 8><<<g, 256, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); }
+                    else { if (wpb == 4) nv_v2<36, 4><<<g, 128, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); else nv_v2<36, 8><<<g, 256, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); } });
+            }
+        }
+        // V3: persistent, RPT rows per warp-task with all loads hoisted
+        { auto run3 = [&](auto kfn, int wpb, int rpt) {
+            int per_sm = 0; cudaFuncSetAttribute((const void *) kfn, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) smem);
+            cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per_sm, (const void *) kfn, wpb * 32, smem);
+            for (int mult : {1, 2}) { int G = std::max(1, per_sm * 84 / 8 * mult);
+                char nm[64]; snprintf(nm, 64, "v3 wpb=%d rpt=%d res/SM=%d G=%d", wpb, rpt, per_sm, G);
+                runv(nm, [&](int i, int slots) { const int * idp = ids + (i % 16) * 64; dim3 g(G, slots); kfn<<<g, wpb * 32, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); }); } };
+          if (c.K == 2304) { run3(nv_v3<72, 4, 1>, 4, 1); run3(nv_v3<72, 4, 2>, 4, 2); run3(nv_v3<72, 4, 4>, 4, 4); run3(nv_v3<72, 8, 2>, 8, 2); }
+          else { run3(nv_v3<36, 4, 1>, 4, 1); run3(nv_v3<36, 4, 2>, 4, 2); run3(nv_v3<36, 4, 4>, 4, 4); run3(nv_v3<36, 8, 2>, 8, 2); } }
+        for (int pf : {1, 2, 3, 4}) { char nm[64]; snprintf(nm, 64, "v4 prefetch=%d", pf);
+            runv(nm, [&](int i, int slots) { const int * idp = ids + (i % 16) * 64; dim3 g(c.N / 16, slots);
+                if (c.K == 2304) { if (pf == 1) nv_v4<72, 1><<<g, 128, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); else if (pf == 2) nv_v4<72, 2><<<g, 128, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); else if (pf == 3) nv_v4<72, 3><<<g, 128, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); else nv_v4<72, 4><<<g, 128, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); }
+                else { if (pf == 1) nv_v4<36, 1><<<g, 128, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); else if (pf == 2) nv_v4<36, 2><<<g, 128, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); else if (pf == 3) nv_v4<36, 3><<<g, 128, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); else nv_v4<36, 4><<<g, 128, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); } }); }
         for (int slots : {8, 16, 32, 64}) {
             float us = timeit(s, 200, [&](int i) { dim3 grid(c.N / 16, slots); const int * idp = ids + (i % 16) * 64;
                 if (c.K == 2304) nvfp4_gemv_pack4<72><<<grid, 128, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); else nvfp4_gemv_pack4<36><<<grid, 128, smem, s>>>(qs, sc, x, c.K, y, c.K, c.N, idp); });

@@ -397,6 +397,9 @@ __device__ __forceinline__ uint32_t ldg_stream32(const uint32_t * p) {
 // (unit u = lane + 32 t). Consecutive lanes read consecutive chunks of one row, so the weight loads stay
 // 128-bit and coalesced. NCH = K/32. Lane utilization is 100% for K=2304 (288 units) and 90% for K=1152.
 // Measured on RTX 3090: gate_up 50.2 -> 41.5 us, down 29.4 -> 25.1 us, same results (rel diff ~1e-7).
+// The first round of weight loads (16-byte chunk + scale word) is issued BEFORE the activation vector is staged to shared memory and the block
+// barrier, so the staging latency overlaps the first DRAM latency. Same math, same lane mapping, same reduction order: output is bit-identical.
+// RTX A6000, random weights, 8 experts: gate_up 45.9 -> 39.7 us, down 27.9 -> 24.4 us (prefetching 2+ rounds is slower: register pressure).
 template <int NCH>
 __global__ void __launch_bounds__(128)
 nvfp4_gemv_pack4(const uint8_t * __restrict__ qs_all, const uint8_t * __restrict__ sc_all,
@@ -410,11 +413,18 @@ nvfp4_gemv_pack4(const uint8_t * __restrict__ qs_all, const uint8_t * __restrict
     const uint8_t * qs = qs_all + e * (int64_t) N * (K / 2);
     const uint8_t * sc = sc_all + e * (int64_t) N * (K / 16);
     const float * xin = x + slot * x_slot_stride;
+    const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+    const int rowbase = (blockIdx.x * 4 + warp) * RP;
+    uint4 pa = make_uint4(0, 0, 0, 0);
+    uint32_t ps = 0;
+    if (lane < UNITS && rowbase < N) {                       // round 0: unit u = lane
+        const int rs0 = lane / NCH, c0 = lane - rs0 * NCH, row0 = rowbase + rs0;
+        pa = ldg_stream128(reinterpret_cast<const uint4 *>(qs + (size_t) row0 * (K / 2)) + c0);
+        ps = ldg_stream32(reinterpret_cast<const uint32_t *>(sc + (size_t) row0 * (K / 16)) + (c0 >> 1));
+    }
     for (int i = threadIdx.x; i < K; i += T) { const int b = i >> 6, r = i & 63; xs[b * 68 + r] = xin[i]; }
     if (threadIdx.x < 16) kt[threadIdx.x] = kE2M1d[threadIdx.x];
     __syncthreads();
-    const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
-    const int rowbase = (blockIdx.x * 4 + warp) * RP;
     if (rowbase >= N) return;
     float acc[RP];
 #pragma unroll
@@ -433,8 +443,12 @@ nvfp4_gemv_pack4(const uint8_t * __restrict__ qs_all, const uint8_t * __restrict
 #pragma unroll
                 for (int i = 0; i < 8; ++i) xv[i] = xb[i];
                 const float * xf = reinterpret_cast<const float *>(xv);
-                const uint4 a = ldg_stream128(reinterpret_cast<const uint4 *>(qs + (size_t) row * (K / 2)) + c);
-                const uint32_t sw = ldg_stream32(reinterpret_cast<const uint32_t *>(sc + (size_t) row * (K / 16)) + b);
+                uint4 a; uint32_t sw;
+                if (u0 == 0) { a = pa; sw = ps; }
+                else {
+                    a = ldg_stream128(reinterpret_cast<const uint4 *>(qs + (size_t) row * (K / 2)) + c);
+                    sw = ldg_stream32(reinterpret_cast<const uint32_t *>(sc + (size_t) row * (K / 16)) + b);
+                }
                 const uint32_t w[4] = {a.x, a.y, a.z, a.w};
 #pragma unroll
                 for (int h = 0; h < 2; ++h) {
