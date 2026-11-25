@@ -1,0 +1,14 @@
+loaded model to GPU
+[mem] weights loaded                     used 18.61 GB (free 32.28 GB of 50.90 GB)
+[mem] after init_batch (KV + buffers)    used 19.46 GB (free 31.44 GB of 50.90 GB)
+[mem] after init_pf                      used 19.94 GB (free 30.96 GB of 50.90 GB)
+config: lean=1 kv=fp16(full layers) maxctx=8192 nslots=1 ring=1040 ref_all=0
+prefill file data/spec/edit_toolcall_py_direct.txt: 1211 tokens (slot 0)
+fast prefill: last-token argmax 90
+prefill: 1211 tokens, 3093.3 tokens/s (chunk B=512, GPU time)
+[mem] after prefill                      used 20.04 GB (free 30.86 GB of 50.90 GB)
+spec: measured step cost (ms, launch+sync) by B: 1:13.06 2:14.95 3:17.88 4:19.71 5:24.95 6:27.32 7:28.95 8:31.22 9:38.23 10:40.07 11:42.45 12:44.12 13:47.56 14:49.81 15:51.86 16:54.07
+spec: K=15 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 8.890 s = 112.37 tok/s (8.899 ms/token); steps 510, tokens/step 1.959
+spec: drafted 945, accepted 490 (acceptance 51.9%), mean accepted per step 0.961, mean accepted per drafting step 1.017, drafting steps 482 of 510
+spec: copy proposer used in 238 of 510 steps (min 4 tokens)
+spec: B histogram: 1:28 2:304 3:24 4:121 7:1 8:32

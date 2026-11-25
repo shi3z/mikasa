@@ -1,0 +1,10 @@
+loaded model to GPU
+[mem] weights loaded                     used 18.61 GB (free 32.28 GB of 50.90 GB)
+[mem] after init_batch (KV + buffers)    used 20.26 GB (free 30.64 GB of 50.90 GB)
+[mem] after init_pf                      used 20.74 GB (free 30.15 GB of 50.90 GB)
+config: lean=1 kv=fp16(full layers) maxctx=32768 nslots=1 ring=1040 ref_all=0
+prefill file data/spec/edit_whole_py_ctx24k_direct.txt: 26006 tokens (slot 0)
+fast prefill: last-token argmax 371
+prefill: 26006 tokens, 2923.5 tokens/s (chunk B=512, GPU time)
+[mem] after prefill                      used 20.85 GB (free 30.05 GB of 50.90 GB)
+generated 1000 tokens in 14.14 s (14.1 ms/token incl. host round trip)

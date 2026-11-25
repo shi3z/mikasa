@@ -1,0 +1,173 @@
+== gen_py_logstats_direct
+  old: generated 1000 tokens in 12.55 s (12.5 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 12.524 s = 79.77 tok/s (12.536 ms/token); steps 999, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 11.387 s = 87.73 tok/s (11.398 ms/token); steps 775, tokens/step 1.289
+== gen_py_lru_direct
+  old: generated 1000 tokens in 12.66 s (12.7 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 12.654 s = 78.94 tok/s (12.667 ms/token); steps 999, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 10.502 s = 95.13 tok/s (10.512 ms/token); steps 758, tokens/step 1.318
+== gen_c_vec_direct
+  old: generated 737 tokens in 9.25 s (12.6 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 737 tokens in 9.251 s = 79.56 tok/s (12.570 ms/token); steps 736, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 737 tokens in 8.845 s = 83.21 tok/s (12.018 ms/token); steps 677, tokens/step 1.087
+== edit_whole_py_direct
+  old: generated 1000 tokens in 12.92 s (12.9 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 12.965 s = 77.05 tok/s (12.978 ms/token); steps 999, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 9.627 s = 103.77 tok/s (9.636 ms/token); steps 621, tokens/step 1.609
+== edit_diff_cpp_direct
+  old: generated 1000 tokens in 12.94 s (12.9 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 12.947 s = 77.16 tok/s (12.959 ms/token); steps 999, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 8.322 s = 120.04 tok/s (8.331 ms/token); steps 494, tokens/step 2.022
+== edit_toolcall_py_direct
+  old: generated 1000 tokens in 12.97 s (13.0 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 12.929 s = 77.27 tok/s (12.942 ms/token); steps 999, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 9.077 s = 110.06 tok/s (9.086 ms/token); steps 528, tokens/step 1.892
+== shell_script_direct
+  old: generated 85 tokens in 1.09 s (12.9 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 85 tokens in 1.089 s = 77.13 tok/s (12.966 ms/token); steps 84, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 85 tokens in 0.820 s = 102.46 tok/s (9.759 ms/token); steps 54, tokens/step 1.556
+== shell_find_direct
+  old: generated 37 tokens in 0.46 s (12.4 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 37 tokens in 0.456 s = 78.97 tok/s (12.664 ms/token); steps 36, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 37 tokens in 0.219 s = 164.29 tok/s (6.087 ms/token); steps 12, tokens/step 3.000
+== shell_pipeline_direct
+  old: generated 63 tokens in 0.77 s (12.2 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 63 tokens in 0.766 s = 80.97 tok/s (12.350 ms/token); steps 62, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 63 tokens in 0.638 s = 97.15 tok/s (10.294 ms/token); steps 45, tokens/step 1.378
+== gen_py_logstats
+  old: generated 1000 tokens in 12.67 s (12.7 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 12.665 s = 78.88 tok/s (12.678 ms/token); steps 999, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 11.172 s = 89.42 tok/s (11.183 ms/token); steps 767, tokens/step 1.302
+== gen_c_vec
+  old: generated 1000 tokens in 12.66 s (12.7 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 12.633 s = 79.08 tok/s (12.646 ms/token); steps 999, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 11.399 s = 87.64 tok/s (11.411 ms/token); steps 798, tokens/step 1.252
+== edit_whole_py
+  old: generated 1000 tokens in 12.97 s (13.0 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 12.953 s = 77.13 tok/s (12.966 ms/token); steps 999, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 9.362 s = 106.71 tok/s (9.371 ms/token); steps 622, tokens/step 1.606
+== edit_toolcall_py
+  old: generated 1000 tokens in 12.96 s (13.0 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 12.977 s = 76.99 tok/s (12.990 ms/token); steps 999, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 8.362 s = 119.47 tok/s (8.370 ms/token); steps 507, tokens/step 1.970
+== shell_script
+  old: generated 102 tokens in 1.31 s (12.9 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 102 tokens in 1.310 s = 77.11 tok/s (12.969 ms/token); steps 101, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 102 tokens in 1.113 s = 90.77 tok/s (11.016 ms/token); steps 75, tokens/step 1.347
+== shell_find
+  old: generated 85 tokens in 1.07 s (12.6 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 85 tokens in 1.068 s = 78.65 tok/s (12.714 ms/token); steps 84, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 85 tokens in 0.794 s = 105.81 tok/s (9.451 ms/token); steps 54, tokens/step 1.556
+== reason_puzzle
+  old: generated 1000 tokens in 12.63 s (12.6 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 12.664 s = 78.89 tok/s (12.676 ms/token); steps 999, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 11.317 s = 88.27 tok/s (11.329 ms/token); steps 834, tokens/step 1.198
+== reason_essay
+  old: generated 1000 tokens in 12.65 s (12.7 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 12.644 s = 79.01 tok/s (12.657 ms/token); steps 999, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 11.557 s = 86.44 tok/s (11.569 ms/token); steps 802, tokens/step 1.246
+== reason_math
+  old: generated 1000 tokens in 12.69 s (12.7 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 12.675 s = 78.82 tok/s (12.688 ms/token); steps 999, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 10.610 s = 94.16 tok/s (10.620 ms/token); steps 748, tokens/step 1.336
+== edit_whole_py_ctx24k_direct
+  old: generated 1000 tokens in 14.10 s (14.1 ms/token incl. host round trip)
+  spec: K=0 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 14.109 s = 70.81 tok/s (14.123 ms/token); steps 999, tokens/step 1.000
+  spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 6.302 s = 158.52 tok/s (6.308 ms/token); steps 306, tokens/step 3.265
+== exactness (token files vs old loop)
+gen_py_logstats_direct.p0          ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_logstats_direct.s4          ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_logstats_direct.s8          ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_logstats_direct.s15         ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_lru_direct.p0               ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_lru_direct.s4               ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_lru_direct.s8               ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_lru_direct.s15              ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_c_vec_direct.p0                ref  737 tokens, test  737 tokens: IDENTICAL
+gen_c_vec_direct.s4                ref  737 tokens, test  737 tokens: IDENTICAL
+gen_c_vec_direct.s8                ref  737 tokens, test  737 tokens: IDENTICAL
+gen_c_vec_direct.s15               ref  737 tokens, test  737 tokens: IDENTICAL
+edit_whole_py_direct.p0            ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py_direct.s4            ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py_direct.s8            ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py_direct.s15           ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_diff_cpp_direct.p0            ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_diff_cpp_direct.s4            ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_diff_cpp_direct.s8            ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_diff_cpp_direct.s15           ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_toolcall_py_direct.p0         ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_toolcall_py_direct.s4         ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_toolcall_py_direct.s8         ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_toolcall_py_direct.s15        ref 1000 tokens, test 1000 tokens: IDENTICAL
+shell_script_direct.p0             ref   85 tokens, test   85 tokens: IDENTICAL
+shell_script_direct.s4             ref   85 tokens, test   85 tokens: IDENTICAL
+shell_script_direct.s8             ref   85 tokens, test   85 tokens: IDENTICAL
+shell_script_direct.s15            ref   85 tokens, test   85 tokens: IDENTICAL
+shell_find_direct.p0               ref   37 tokens, test   37 tokens: IDENTICAL
+shell_find_direct.s4               ref   37 tokens, test   37 tokens: IDENTICAL
+shell_find_direct.s8               ref   37 tokens, test   37 tokens: IDENTICAL
+shell_find_direct.s15              ref   37 tokens, test   37 tokens: IDENTICAL
+shell_pipeline_direct.p0           ref   63 tokens, test   63 tokens: IDENTICAL
+shell_pipeline_direct.s4           ref   63 tokens, test   63 tokens: IDENTICAL
+shell_pipeline_direct.s8           ref   63 tokens, test   63 tokens: IDENTICAL
+shell_pipeline_direct.s15          ref   63 tokens, test   63 tokens: IDENTICAL
+gen_py_logstats.p0                 ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_logstats.s4                 ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_logstats.s8                 ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_logstats.s15                ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_c_vec.p0                       ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_c_vec.s4                       ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_c_vec.s8                       ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_c_vec.s15                      ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py.p0                   ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py.s4                   ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py.s8                   ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py.s15                  ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_toolcall_py.p0                ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_toolcall_py.s4                ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_toolcall_py.s8                ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_toolcall_py.s15               ref 1000 tokens, test 1000 tokens: IDENTICAL
+shell_script.p0                    ref  102 tokens, test  102 tokens: IDENTICAL
+shell_script.s4                    ref  102 tokens, test  102 tokens: IDENTICAL
+shell_script.s8                    ref  102 tokens, test  102 tokens: IDENTICAL
+shell_script.s15                   ref  102 tokens, test  102 tokens: IDENTICAL
+shell_find.p0                      ref   85 tokens, test   85 tokens: IDENTICAL
+shell_find.s4                      ref   85 tokens, test   85 tokens: IDENTICAL
+shell_find.s8                      ref   85 tokens, test   85 tokens: IDENTICAL
+shell_find.s15                     ref   85 tokens, test   85 tokens: IDENTICAL
+reason_puzzle.p0                   ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_puzzle.s4                   ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_puzzle.s8                   ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_puzzle.s15                  ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_essay.p0                    ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_essay.s4                    ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_essay.s8                    ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_essay.s15                   ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_math.p0                     ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_math.s4                     ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_math.s8                     ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_math.s15                    ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py_ctx24k_direct.p0     ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py_ctx24k_direct.s4     ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py_ctx24k_direct.s8     ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py_ctx24k_direct.s15    ref 1000 tokens, test 1000 tokens: IDENTICAL
+== oracle drafts (reference output as draft, K=7 fixed): any rejection = numerical disagreement of the B=8 and B=1 kernels
+gen_py_logstats_direct: spec: drafted 875, accepted 875 (acceptance 100.0%), mean accepted per step 7.000, mean accepted per drafting step 7.000, drafting steps 125 of 125
+gen_py_lru_direct: spec: drafted 875, accepted 875 (acceptance 100.0%), mean accepted per step 7.000, mean accepted per drafting step 7.000, drafting steps 125 of 125
+gen_c_vec_direct: spec: drafted 644, accepted 644 (acceptance 100.0%), mean accepted per step 7.000, mean accepted per drafting step 7.000, drafting steps 92 of 92
+edit_whole_py_direct: spec: drafted 875, accepted 875 (acceptance 100.0%), mean accepted per step 7.000, mean accepted per drafting step 7.000, drafting steps 125 of 125
+edit_diff_cpp_direct: spec: drafted 875, accepted 875 (acceptance 100.0%), mean accepted per step 7.000, mean accepted per drafting step 7.000, drafting steps 125 of 125
+edit_toolcall_py_direct: spec: drafted 875, accepted 875 (acceptance 100.0%), mean accepted per step 7.000, mean accepted per drafting step 7.000, drafting steps 125 of 125
+shell_script_direct: spec: drafted 74, accepted 74 (acceptance 100.0%), mean accepted per step 6.727, mean accepted per drafting step 6.727, drafting steps 11 of 11
+shell_find_direct: spec: drafted 32, accepted 32 (acceptance 100.0%), mean accepted per step 6.400, mean accepted per drafting step 6.400, drafting steps 5 of 5
+shell_pipeline_direct: spec: drafted 55, accepted 55 (acceptance 100.0%), mean accepted per step 6.875, mean accepted per drafting step 6.875, drafting steps 8 of 8
+gen_py_logstats: spec: drafted 875, accepted 875 (acceptance 100.0%), mean accepted per step 7.000, mean accepted per drafting step 7.000, drafting steps 125 of 125
+gen_c_vec: spec: drafted 875, accepted 875 (acceptance 100.0%), mean accepted per step 7.000, mean accepted per drafting step 7.000, drafting steps 125 of 125
+edit_whole_py: spec: drafted 875, accepted 875 (acceptance 100.0%), mean accepted per step 7.000, mean accepted per drafting step 7.000, drafting steps 125 of 125
+edit_toolcall_py: spec: drafted 875, accepted 875 (acceptance 100.0%), mean accepted per step 7.000, mean accepted per drafting step 7.000, drafting steps 125 of 125
+shell_script: spec: drafted 89, accepted 89 (acceptance 100.0%), mean accepted per step 6.846, mean accepted per drafting step 6.846, drafting steps 13 of 13
+shell_find: spec: drafted 74, accepted 74 (acceptance 100.0%), mean accepted per step 6.727, mean accepted per drafting step 6.727, drafting steps 11 of 11
+reason_puzzle: spec: drafted 875, accepted 875 (acceptance 100.0%), mean accepted per step 7.000, mean accepted per drafting step 7.000, drafting steps 125 of 125
+reason_essay: spec: drafted 875, accepted 875 (acceptance 100.0%), mean accepted per step 7.000, mean accepted per drafting step 7.000, drafting steps 125 of 125
+reason_math: spec: drafted 875, accepted 875 (acceptance 100.0%), mean accepted per step 7.000, mean accepted per drafting step 7.000, drafting steps 125 of 125
+edit_whole_py_ctx24k_direct: spec: drafted 875, accepted 875 (acceptance 100.0%), mean accepted per step 7.000, mean accepted per drafting step 7.000, drafting steps 125 of 125

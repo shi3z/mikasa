@@ -391,6 +391,7 @@ __global__ void kb_rollback(const RbEntry * __restrict__ tab, const int * __rest
     const int c = blockIdx.x * blockDim.x + threadIdx.x;
     if (c >= e.C) return;
     const int j = *jp;
+    if (j < 0) return;      // spec decoding: no rollback (all tokens accepted / first step)
     const float a = e.H[(size_t) j * e.C + c], b = e.H[(size_t) (j + 1) * e.C + c], d = e.H[(size_t) (j + 2) * e.C + c];
     e.S[c] = a; e.S[e.C + c] = b; e.S[2 * e.C + c] = d;
 }

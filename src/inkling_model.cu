@@ -540,6 +540,7 @@ static void set_pos_tok(Engine & g, int pos, int tok, cudaStream_t s) {
 
 #include "batch_host.inc"
 #include "prefill_host.inc"
+#include "spec_host.inc"
 #include "long_host.inc"
 
 int main(int argc, char ** argv) {
@@ -590,6 +591,19 @@ int main(int argc, char ** argv) {
         else if (std::strcmp(argv[i], "--cmp-ref") == 0 && i + 1 < argc) LA.cmp_ref = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--ref-all") == 0) LA.ref_all = true;
         else if (std::strcmp(argv[i], "--gen-long") == 0 && i + 2 < argc) { LA.gen = std::atoi(argv[++i]); LA.gen_out = argv[++i]; }
+        else if (std::strcmp(argv[i], "--spec") == 0 && i + 1 < argc) LA.spec.k = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--spec-m") == 0 && i + 1 < argc) LA.spec.m = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--spec-fixed") == 0) LA.spec.fixed = true;
+        else if (std::strcmp(argv[i], "--spec-chain") == 0 && i + 1 < argc) LA.spec.chain = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--spec-first") == 0) LA.spec.longest = false;
+        else if (std::strcmp(argv[i], "--spec-oracle") == 0 && i + 1 < argc) LA.spec.oracle = argv[++i];
+        else if (std::strcmp(argv[i], "--spec-stats") == 0 && i + 1 < argc) LA.spec.stats_out = argv[++i];
+        else if (std::strcmp(argv[i], "--temp") == 0 && i + 1 < argc) LA.spec.temp = (float) std::atof(argv[++i]);
+        else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) LA.spec.seed = (unsigned) std::atoll(argv[++i]);
+        else if (std::strcmp(argv[i], "--spec-trials") == 0 && i + 1 < argc) LA.spec.trials = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--spec-copy") == 0 && i + 1 < argc) LA.spec.copy_min = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--spec-wide") == 0 && i + 1 < argc) LA.spec.wide = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--sampler-test") == 0) LA.spec.sampler_test = true;
         else if (std::strcmp(argv[i], "--multi-check") == 0) LA.multi_check = true;
         else if (std::strcmp(argv[i], "--time-decode") == 0) LA.time_decode = true;
         else if (std::strcmp(argv[i], "--time-prefill") == 0) LA.time_prefill = true;

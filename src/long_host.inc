@@ -2,6 +2,7 @@
 // All of this works in lean mode (no forward_token): only forward_batch is used.
 
 struct LongArgs {
+    SpecArgs spec;
     bool multi_check = false, lean = false, kv16 = true, ref_all = false, time_decode = false, time_prefill = false;
     int maxctx = 65536, nslots = 4, ring = NSWA + MB, tail = 0, cmp_ref = 0, gen = 0, pf_b = 16, prefill_slot = 0, pf_fast = 0, layer_cmp = 0; bool pf_all = false; int pf_split = 0; std::string time_depths; std::string force_file, gen_logits;
     std::string prefill_file, tail_out, argmax_out, gen_out, ring_note;
@@ -235,6 +236,11 @@ static int run_long(Engine & g, const LongArgs & A, cudaStream_t s) {
             for (int i = 0; i < Npre; ++i) std::fprintf(f, "%d\n", arg[i]);
             std::fclose(f);
         }
+        if (A.gen > 0 && A.cmp_ref == 0 && A.spec.k >= 0) {
+            X.ref = A.ref_all;
+            std::vector<int> prompt(toks.begin(), toks.begin() + N);
+            run_spec(g, X, A.spec, prompt, arg[N - 1], A.prefill_slot, A.gen, A.gen_out, s, A.pf_fast ? &PF : nullptr);
+        } else
         if (A.gen > 0 && A.cmp_ref == 0) {
             // greedy decoding of the sequence of slot prefill_slot (B = 1, same-sequence graph)
             X.ref = A.ref_all;

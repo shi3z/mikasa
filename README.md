@@ -32,6 +32,17 @@ Decode numbers use synthetic KV contents (cost depends on positions only), prefi
 | 32K | 265 | 2,893 | 3,269 |
 | 60K | 247 | 2,612-2,652 | 2,916 |
 
+**Speculative decoding (`--spec`, lean mode, greedy, single sequence; plain = 77-80 tok/s), tok/s**
+
+| workload (1000 tokens) | plain | n-gram / copy drafts, batch kernels (output identical to plain) | `--spec-wide` 32-64 row verify (approximate greedy) |
+|---|---:|---:|---:|
+| whole file with 2 small changes (copy-heavy) | 77 | 216 (2.8x) | **398 (5.2x)** |
+| JSONL edit | 77 | 210 (2.7x) | 347 (4.5x) |
+| edit as unified diff / write_file tool call | 77 | 112-118 (1.5x) | 112-121 |
+| shell command tool calls | 77-82 | 93-182 (1.2-2.3x) | similar |
+| new code generation | 79 | 83-95 (1.04-1.2x) | similar |
+| reasoning text | 79 | 86-93 (1.1-1.2x) | similar |
+
 **Multi-token verification (same sequence, B tokens per pass, the basis for speculative decoding), tok/s**
 
 | B | 1 | 2 | 4 | 8 | 16 |
@@ -117,6 +128,19 @@ Caveats: FP16 KV changes the argmax at ~1.3-1.9 % of positions versus FP32 KV (r
 splitting a prompt at a position that is not a multiple of 256 changes logits at noise level or more; `--lean` has no `forward_token` /
 `--batch-test` (use the non-lean build for the oracle test); B=32 and position 65535 itself are untested. Reproduce with `tools/run_all.sh`,
 `tools/run_prefill_all.sh`.
+
+## Speculative decoding (`--spec`, `--spec-copy`, `--spec-wide`, `--temp`)
+
+Lean-mode generation loop with one CUDA-graph launch and one host sync per step (`src/spec_host.inc`). Drafts come from a lookup over prompt + generated text:
+n-gram with the longest backward match, and (`--spec-copy 4`) a copy proposer after [shi3z/xeflash](https://github.com/shi3z/xeflash) (3-gram index, longest match over the 64 latest occurrences,
+"sticky" continuation of the previous copy source). Verification = `forward_batch` over [last token + drafts], longest accepted prefix + bonus token, `batch_rollback` for the conv state. The draft width
+is chosen per step from measured step costs and online acceptance estimates, so plain decoding is used when drafting does not pay.
+
+* Batch-kernel verification (up to 16 rows): output identical to the plain loop token for token in 44 of 44 runs over 22 workloads.
+* `--spec-wide W`: verification passes with more than W rows (up to 64) run on the tensor-core prefill path with its own rollback. Much faster on copy-heavy output (4.5-5.4x), but **approximate greedy**:
+  outputs diverged from plain after 90-744 tokens in 13 of 22 workloads (numerics, not a rollback bug).
+* `--temp T --seed S`: rejection-sampling verification (accept a draft with probability p(d)), chi-square tested; no top-k/top-p/penalties, not combined with the wide path.
+* Not tested: more than one slot with speculation, `--kv32`, wide path beyond ~25K context. One run per cell, synthetic prompts. Full tables, sweeps and the honest list: [`spec/RESULTS_spec.md`](spec/RESULTS_spec.md); reproduce with `tools/run_spec_all.sh`.
 
 ## OpenAI-compatible front end (`server/`)
 

@@ -1,0 +1,13 @@
+loaded model to GPU
+[mem] weights loaded                     used 18.61 GB (free 32.28 GB of 50.90 GB)
+[mem] after init_batch (KV + buffers)    used 19.46 GB (free 31.44 GB of 50.90 GB)
+[mem] after init_pf                      used 19.94 GB (free 30.96 GB of 50.90 GB)
+config: lean=1 kv=fp16(full layers) maxctx=8192 nslots=1 ring=1040 ref_all=0
+prefill file data/spec/gen_c_vec.txt: 94 tokens (slot 0)
+fast prefill: last-token argmax 200001
+prefill: 94 tokens, 1574.4 tokens/s (chunk B=512, GPU time)
+[mem] after prefill                      used 19.96 GB (free 30.94 GB of 50.90 GB)
+spec: measured step cost (ms, launch+sync) by B: 1:12.31 2:14.09 3:16.43 4:17.76 5:23.22
+spec: K=4 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 11.400 s = 87.63 tok/s (11.412 ms/token); steps 798, tokens/step 1.252
+spec: drafted 646, accepted 201 (acceptance 31.1%), mean accepted per step 0.252, mean accepted per drafting step 0.356, drafting steps 565 of 798
+spec: B histogram: 1:233 2:503 3:43 4:19

@@ -1,0 +1,15 @@
+loaded model to GPU
+[mem] weights loaded                     used 18.61 GB (free 32.28 GB of 50.90 GB)
+[mem] after init_batch (KV + buffers)    used 19.46 GB (free 31.44 GB of 50.90 GB)
+[mem] after init_pf                      used 19.94 GB (free 30.96 GB of 50.90 GB)
+config: lean=1 kv=fp16(full layers) maxctx=8192 nslots=1 ring=1040 ref_all=0
+prefill file data/spec/reason_essay.txt: 65 tokens (slot 0)
+fast prefill: last-token argmax 200001
+prefill: 65 tokens, 1229.2 tokens/s (chunk B=512, GPU time)
+[mem] after prefill                      used 19.95 GB (free 30.94 GB of 50.90 GB)
+spec: measured step cost (ms, launch+sync) by B: 1:12.32 2:13.66 3:16.49 4:17.81 5:23.41 6:25.19 7:26.84 8:28.31 9:24.10 10:24.40 11:24.70 12:24.99 13:25.29 14:25.59 15:25.89 16:26.19 24:30.31 32:33.87 40:37.15 48:40.42 56:43.33 64:46.25
+spec: K=63 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 12.059 s = 82.84 tok/s (12.072 ms/token); steps 841, tokens/step 1.188
+spec: drafted 736, accepted 158 (acceptance 21.5%), mean accepted per step 0.188, mean accepted per drafting step 0.257, drafting steps 615 of 841
+spec: copy proposer used in 72 of 841 steps (min 4 tokens)
+spec: wide (tensor-core prefill path) verify passes: 6 of 841
+spec: B histogram: 1:226 2:581 4:28 10:1 11:1 12:2 16:2

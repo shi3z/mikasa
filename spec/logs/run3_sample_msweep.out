@@ -1,0 +1,71 @@
+sampler test: T=1.00, top-4 probabilities 0.7669 0.2019 0.0276 0.0023
+  draft 23059   p(d)=0.76689: accept rate 0.76758 (expected 0.76689); chi2 = 4.1 over 6 bins (dof ~ 5)
+  draft 13      p(d)=0.02762: accept rate 0.02752 (expected 0.02762); chi2 = 5.4 over 6 bins (dof ~ 5)
+  draft 7       p(d)=0.00000: accept rate 0.00000 (expected 0.00000); chi2 = 5.9 over 6 bins (dof ~ 5)
+  draft -1      p(d)=0.00000: accept rate 0.00000 (expected 0.00000); chi2 = 3.9 over 6 bins (dof ~ 5)
+sampler test: T=0.70, top-4 probabilities 1.0000 0.0000 0.0000 0.0000
+  draft 200008  p(d)=1.00000: accept rate 1.00000 (expected 1.00000); chi2 = 0.0 over 1 bins (dof ~ 0)
+  draft 33131   p(d)=0.00000: accept rate 0.00000 (expected 0.00000); chi2 = 0.0 over 1 bins (dof ~ 0)
+  draft 7       p(d)=0.00000: accept rate 0.00000 (expected 0.00000); chi2 = 0.0 over 1 bins (dof ~ 0)
+  draft -1      p(d)=0.00000: accept rate 0.00000 (expected 0.00000); chi2 = 0.0 over 1 bins (dof ~ 0)
+sampler test: T=2.00, top-4 probabilities 0.9783 0.0077 0.0001 0.0001
+  draft 200008  p(d)=0.97826: accept rate 0.97827 (expected 0.97826); chi2 = 0.2 over 3 bins (dof ~ 2)
+  draft 128167  p(d)=0.00015: accept rate 0.00009 (expected 0.00015); chi2 = 35.2 over 3 bins (dof ~ 2)
+  draft 7       p(d)=0.00000: accept rate 0.00000 (expected 0.00000); chi2 = 6.1 over 3 bins (dof ~ 2)
+  draft -1      p(d)=0.00000: accept rate 0.00000 (expected 0.00000); chi2 = 14.2 over 3 bins (dof ~ 2)
+gen_py_logstats_direct M=1 --spec-first adaptive latest-match  86.07 tok/s, tokens/step 1.253
+gen_py_logstats_direct M=2 --spec-first adaptive latest-match  85.32 tok/s, tokens/step 1.154
+gen_py_logstats_direct M=1  adaptive longest-match  87.23 tok/s, tokens/step 1.286
+gen_py_logstats_direct M=2  adaptive longest-match  85.52 tok/s, tokens/step 1.148
+gen_py_logstats_direct M=3  adaptive longest-match  86.03 tok/s, tokens/step 1.144
+gen_py_logstats_direct M=4  adaptive longest-match  83.49 tok/s, tokens/step 1.114
+gen_py_logstats_direct M=6  adaptive longest-match  81.54 tok/s, tokens/step 1.054
+gen_py_logstats_direct M=3 --spec-fixed fixed longest-match  76.14 tok/s, tokens/step 1.208
+edit_whole_py_direct M=1 --spec-first adaptive latest-match  92.33 tok/s, tokens/step 1.332
+edit_whole_py_direct M=2 --spec-first adaptive latest-match  99.66 tok/s, tokens/step 1.525
+edit_whole_py_direct M=1  adaptive longest-match  104.01 tok/s, tokens/step 1.611
+edit_whole_py_direct M=2  adaptive longest-match  103.83 tok/s, tokens/step 1.609
+edit_whole_py_direct M=3  adaptive longest-match  99.92 tok/s, tokens/step 1.530
+edit_whole_py_direct M=4  adaptive longest-match  96.70 tok/s, tokens/step 1.417
+edit_whole_py_direct M=6  adaptive longest-match  89.11 tok/s, tokens/step 1.247
+edit_whole_py_direct M=3 --spec-fixed fixed longest-match  86.44 tok/s, tokens/step 1.690
+edit_diff_cpp_direct M=1 --spec-first adaptive latest-match  94.67 tok/s, tokens/step 1.350
+edit_diff_cpp_direct M=2 --spec-first adaptive latest-match  107.68 tok/s, tokens/step 1.784
+edit_diff_cpp_direct M=1  adaptive longest-match  119.69 tok/s, tokens/step 2.022
+edit_diff_cpp_direct M=2  adaptive longest-match  120.39 tok/s, tokens/step 2.026
+edit_diff_cpp_direct M=3  adaptive longest-match  117.77 tok/s, tokens/step 2.026
+edit_diff_cpp_direct M=4  adaptive longest-match  111.73 tok/s, tokens/step 1.797
+edit_diff_cpp_direct M=6  adaptive longest-match  104.30 tok/s, tokens/step 1.530
+edit_diff_cpp_direct M=3 --spec-fixed fixed longest-match  96.17 tok/s, tokens/step 2.485
+edit_toolcall_py_direct M=1 --spec-first adaptive latest-match  94.17 tok/s, tokens/step 1.452
+edit_toolcall_py_direct M=2 --spec-first adaptive latest-match  105.69 tok/s, tokens/step 1.643
+edit_toolcall_py_direct M=1  adaptive longest-match  108.52 tok/s, tokens/step 1.896
+edit_toolcall_py_direct M=2  adaptive longest-match  107.72 tok/s, tokens/step 1.787
+edit_toolcall_py_direct M=3  adaptive longest-match  102.17 tok/s, tokens/step 1.576
+edit_toolcall_py_direct M=4  adaptive longest-match  98.44 tok/s, tokens/step 1.454
+edit_toolcall_py_direct M=6  adaptive longest-match  90.85 tok/s, tokens/step 1.247
+edit_toolcall_py_direct M=3 --spec-fixed fixed longest-match  79.38 tok/s, tokens/step 1.874
+reason_math M=1 --spec-first adaptive latest-match  89.91 tok/s, tokens/step 1.286
+reason_math M=2 --spec-first adaptive latest-match  90.68 tok/s, tokens/step 1.238
+reason_math M=1  adaptive longest-match  95.16 tok/s, tokens/step 1.370
+reason_math M=2  adaptive longest-match  92.42 tok/s, tokens/step 1.257
+reason_math M=3  adaptive longest-match  89.58 tok/s, tokens/step 1.202
+reason_math M=4  adaptive longest-match  86.25 tok/s, tokens/step 1.134
+reason_math M=6  adaptive longest-match  83.06 tok/s, tokens/step 1.070
+reason_math M=3 --spec-fixed fixed longest-match  72.13 tok/s, tokens/step 1.325
+reason_essay M=1 --spec-first adaptive latest-match  85.39 tok/s, tokens/step 1.227
+reason_essay M=2 --spec-first adaptive latest-match  86.29 tok/s, tokens/step 1.156
+reason_essay M=1  adaptive longest-match  86.31 tok/s, tokens/step 1.246
+reason_essay M=2  adaptive longest-match  87.00 tok/s, tokens/step 1.167
+reason_essay M=3  adaptive longest-match  83.38 tok/s, tokens/step 1.091
+reason_essay M=4  adaptive longest-match  82.77 tok/s, tokens/step 1.075
+reason_essay M=6  adaptive longest-match  81.36 tok/s, tokens/step 1.046
+reason_essay M=3 --spec-fixed fixed longest-match  73.83 tok/s, tokens/step 1.135
+gen_py_logstats_direct T=0.7: spec: K=0 M=1 adaptive longest-match temp=0.70: generated 1000 tokens in 12.825 s = 77.89 tok/s (12.838 ms/token); steps 999, tokens/step 1.000
+gen_py_logstats_direct T=0.7: spec: K=8 M=1 adaptive longest-match temp=0.70: generated 1000 tokens in 11.682 s = 85.52 tok/s (11.694 ms/token); steps 769, tokens/step 1.299
+edit_whole_py_direct T=0.7: spec: K=0 M=1 adaptive longest-match temp=0.70: generated 1000 tokens in 13.117 s = 76.16 tok/s (13.130 ms/token); steps 999, tokens/step 1.000
+edit_whole_py_direct T=0.7: spec: K=8 M=1 adaptive longest-match temp=0.70: generated 1000 tokens in 9.284 s = 107.61 tok/s (9.293 ms/token); steps 592, tokens/step 1.688
+shell_script_direct T=0.7: spec: K=0 M=1 adaptive longest-match temp=0.70: generated 72 tokens in 0.931 s = 76.29 tok/s (13.108 ms/token); steps 71, tokens/step 1.000
+shell_script_direct T=0.7: spec: K=8 M=1 adaptive longest-match temp=0.70: generated 72 tokens in 0.763 s = 93.08 tok/s (10.744 ms/token); steps 51, tokens/step 1.392
+reason_essay T=0.7: spec: K=0 M=1 adaptive longest-match temp=0.70: generated 1000 tokens in 12.797 s = 78.07 tok/s (12.809 ms/token); steps 999, tokens/step 1.000
+reason_essay T=0.7: spec: K=8 M=1 adaptive longest-match temp=0.70: generated 1000 tokens in 12.461 s = 80.17 tok/s (12.473 ms/token); steps 951, tokens/step 1.050

@@ -1,0 +1,14 @@
+loaded model to GPU
+[mem] weights loaded                     used 18.61 GB (free 32.28 GB of 50.90 GB)
+[mem] after init_batch (KV + buffers)    used 19.46 GB (free 31.44 GB of 50.90 GB)
+[mem] after init_pf                      used 19.94 GB (free 30.96 GB of 50.90 GB)
+config: lean=1 kv=fp16(full layers) maxctx=8192 nslots=1 ring=1040 ref_all=0
+prefill file data/spec/editcopy_jsonl_direct.txt: 3208 tokens (slot 0)
+fast prefill: last-token argmax 90
+prefill: 3208 tokens, 3212.1 tokens/s (chunk B=512, GPU time)
+[mem] after prefill                      used 20.04 GB (free 30.86 GB of 50.90 GB)
+spec: measured step cost (ms, launch+sync) by B: 1:13.02 2:14.59 3:17.69 4:19.05 5:24.18 6:26.56 7:28.58 8:30.44 9:37.85
+spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 4.811 s = 207.65 tok/s (4.816 ms/token); steps 161, tokens/step 6.205
+spec: drafted 985, accepted 842 (acceptance 85.5%), mean accepted per step 5.230, mean accepted per drafting step 5.230, drafting steps 161 of 161
+spec: copy proposer used in 159 of 161 steps (min 4 tokens)
+spec: B histogram: 2:7 4:25 8:129

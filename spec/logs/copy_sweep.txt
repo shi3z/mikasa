@@ -1,0 +1,21 @@
+editcopy_file_direct: plain 12.8 ms/token (1000 tokens)
+  --spec 15 --spec-m 1: 220.38 tok/s (4.538 ms/token); steps 152, tokens/step 6.572 |  | identical
+  --spec 4 --spec-copy 4: 175.14 tok/s (5.710 ms/token); steps 294, tokens/step 3.398 | copy proposer used in 246 of 294 steps (min 4 tokens) | identical
+  --spec 8 --spec-copy 4: 205.82 tok/s (4.859 ms/token); steps 184, tokens/step 5.429 | copy proposer used in 136 of 184 steps (min 4 tokens) | identical
+  --spec 15 --spec-copy 4: 215.97 tok/s (4.630 ms/token); steps 153, tokens/step 6.529 | copy proposer used in 105 of 153 steps (min 4 tokens) | identical
+  --spec 15 --spec-copy 2: 205.40 tok/s (4.868 ms/token); steps 181, tokens/step 5.519 | copy proposer used in 133 of 181 steps (min 2 tokens) | identical
+  --spec 15 --spec-copy 4 --spec-fixed: 178.74 tok/s (5.595 ms/token); steps 115, tokens/step 8.687 | copy proposer used in 67 of 115 steps (min 4 tokens) | identical
+editcopy_jsonl_direct: plain 13.0 ms/token (1000 tokens)
+  --spec 15 --spec-m 1: 192.92 tok/s (5.184 ms/token); steps 193, tokens/step 5.176 |  | identical
+  --spec 4 --spec-copy 4: 179.49 tok/s (5.571 ms/token); steps 271, tokens/step 3.686 | copy proposer used in 269 of 271 steps (min 4 tokens) | identical
+  --spec 8 --spec-copy 4: 207.65 tok/s (4.816 ms/token); steps 161, tokens/step 6.205 | copy proposer used in 159 of 161 steps (min 4 tokens) | identical
+  --spec 15 --spec-copy 4: 209.61 tok/s (4.771 ms/token); steps 158, tokens/step 6.323 | copy proposer used in 156 of 158 steps (min 4 tokens) | identical
+  --spec 15 --spec-copy 2: 209.79 tok/s (4.767 ms/token); steps 158, tokens/step 6.323 | copy proposer used in 156 of 158 steps (min 2 tokens) | identical
+  --spec 15 --spec-copy 4 --spec-fixed: 207.20 tok/s (4.826 ms/token); steps 88, tokens/step 11.352 | copy proposer used in 86 of 88 steps (min 4 tokens) | identical
+editcopy_replace_direct: plain 13.0 ms/token (1000 tokens)
+  --spec 15 --spec-m 1: 131.78 tok/s (7.588 ms/token); steps 373, tokens/step 2.678 |  | identical
+  --spec 4 --spec-copy 4: 132.51 tok/s (7.547 ms/token); steps 389, tokens/step 2.568 | copy proposer used in 301 of 389 steps (min 4 tokens) | identical
+  --spec 8 --spec-copy 4: 132.29 tok/s (7.559 ms/token); steps 375, tokens/step 2.664 | copy proposer used in 287 of 375 steps (min 4 tokens) | identical
+  --spec 15 --spec-copy 4: 132.60 tok/s (7.542 ms/token); steps 373, tokens/step 2.678 | copy proposer used in 285 of 373 steps (min 4 tokens) | identical
+  --spec 15 --spec-copy 2: 132.35 tok/s (7.556 ms/token); steps 373, tokens/step 2.678 | copy proposer used in 287 of 373 steps (min 2 tokens) | identical
+  --spec 15 --spec-copy 4 --spec-fixed: 73.02 tok/s (13.696 ms/token); steps 259, tokens/step 3.857 | copy proposer used in 172 of 259 steps (min 4 tokens) | identical

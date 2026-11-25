@@ -1,0 +1,24 @@
+editcopy_file_direct: plain 12.8 ms/token (1000 tokens)
+  --spec 15 --spec-copy 4: 208.48 tok/s (4.797 ms/token); steps 181, tokens/step 5.519 | IDENTICAL
+  --spec 15 --spec-copy 4 --spec-wide 8: 282.04 tok/s (3.546 ms/token); steps 126, tokens/step 7.929 | IDENTICAL
+  --spec 31 --spec-copy 4 --spec-wide 8: 354.15 tok/s (2.824 ms/token); steps 100, tokens/step 9.990 | IDENTICAL
+  --spec 63 --spec-copy 4 --spec-wide 8: 399.71 tok/s (2.502 ms/token); steps 90, tokens/step 11.100 | IDENTICAL
+  --spec 63 --spec-copy 4 --spec-wide 16: 395.68 tok/s (2.527 ms/token); steps 90, tokens/step 11.100 | IDENTICAL
+  --spec 63 --spec-copy 4 --spec-wide 4: 398.36 tok/s (2.510 ms/token); steps 90, tokens/step 11.100 | IDENTICAL
+  --spec 63 --spec-m 1 --spec-wide 8: 383.34 tok/s (2.609 ms/token); steps 98, tokens/step 10.194 | IDENTICAL
+editcopy_jsonl_direct: plain 13.0 ms/token (1000 tokens)
+  --spec 15 --spec-copy 4: 209.74 tok/s (4.768 ms/token); steps 158, tokens/step 6.323 | IDENTICAL
+  --spec 15 --spec-copy 4 --spec-wide 8: 280.79 tok/s (3.561 ms/token); steps 97, tokens/step 10.299 | IDENTICAL
+  --spec 31 --spec-copy 4 --spec-wide 8: 331.65 tok/s (3.015 ms/token); steps 74, tokens/step 13.500 | IDENTICAL
+  --spec 63 --spec-copy 4 --spec-wide 8: 345.76 tok/s (2.892 ms/token); steps 67, tokens/step 14.910 | IDENTICAL
+  --spec 63 --spec-copy 4 --spec-wide 16: 366.32 tok/s (2.730 ms/token); steps 64, tokens/step 15.609 | IDENTICAL
+  --spec 63 --spec-copy 4 --spec-wide 4: 346.91 tok/s (2.883 ms/token); steps 67, tokens/step 14.910 | IDENTICAL
+  --spec 63 --spec-m 1 --spec-wide 8: 350.91 tok/s (2.850 ms/token); steps 77, tokens/step 12.974 | IDENTICAL
+editcopy_replace_direct: plain 13.0 ms/token (1000 tokens)
+  --spec 15 --spec-copy 4: 132.36 tok/s (7.555 ms/token); steps 373, tokens/step 2.678 | IDENTICAL
+  --spec 15 --spec-copy 4 --spec-wide 8: 127.16 tok/s (7.864 ms/token); steps 331, tokens/step 3.018 | IDENTICAL
+  --spec 31 --spec-copy 4 --spec-wide 8: 125.12 tok/s (7.992 ms/token); steps 327, tokens/step 3.055 | IDENTICAL
+  --spec 63 --spec-copy 4 --spec-wide 8: 125.64 tok/s (7.959 ms/token); steps 327, tokens/step 3.055 | IDENTICAL
+  --spec 63 --spec-copy 4 --spec-wide 16: 124.47 tok/s (8.034 ms/token); steps 331, tokens/step 3.018 | IDENTICAL
+  --spec 63 --spec-copy 4 --spec-wide 4: 125.07 tok/s (7.995 ms/token); steps 327, tokens/step 3.055 | IDENTICAL
+  --spec 63 --spec-m 1 --spec-wide 8: 121.49 tok/s (8.231 ms/token); steps 331, tokens/step 3.018 | IDENTICAL

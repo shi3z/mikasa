@@ -1,0 +1,4 @@
+== end-to-end sampling check: 6000 independent 3-token continuations at T=2.5, plain sampling vs verified n-gram drafts (oracle drafts, K=3)
+first 1 generated token(s)         trials 6000 vs 6000, distinct 1229 / 1222, bins 3: chi2 = 0.1, dof = 2, p ~ 0.933
+first 2 generated token(s)         trials 6000 vs 6000, distinct 2418 / 2382, bins 24: chi2 = 18.4, dof = 23, p ~ 0.735
+first 3 generated token(s)         trials 6000 vs 6000, distinct 3095 / 3047, bins 13: chi2 = 9.5, dof = 12, p ~ 0.662

@@ -1,0 +1,88 @@
+gen_py_logstats_direct.p0          ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_logstats_direct.s8          ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_logstats_direct.s15         ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_logstats_direct.w63         ref 1000 tokens, test 1000 tokens: first divergence at token 698 (of 1000)
+gen_py_lru_direct.p0               ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_lru_direct.s8               ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_lru_direct.s15              ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_lru_direct.w63              ref 1000 tokens, test 1000 tokens: first divergence at token 358 (of 1000)
+gen_c_vec_direct.p0                ref  737 tokens, test  737 tokens: IDENTICAL
+gen_c_vec_direct.s8                ref  737 tokens, test  737 tokens: IDENTICAL
+gen_c_vec_direct.s15               ref  737 tokens, test  737 tokens: IDENTICAL
+gen_c_vec_direct.w63               ref  737 tokens, test  896 tokens: first divergence at token 522 (of 737)
+edit_whole_py_direct.p0            ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py_direct.s8            ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py_direct.s15           ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py_direct.w63           ref 1000 tokens, test 1000 tokens: first divergence at token 295 (of 1000)
+edit_diff_cpp_direct.p0            ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_diff_cpp_direct.s8            ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_diff_cpp_direct.s15           ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_diff_cpp_direct.w63           ref 1000 tokens, test 1000 tokens: first divergence at token 417 (of 1000)
+edit_toolcall_py_direct.p0         ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_toolcall_py_direct.s8         ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_toolcall_py_direct.s15        ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_toolcall_py_direct.w63        ref 1000 tokens, test 1000 tokens: first divergence at token 574 (of 1000)
+shell_script_direct.p0             ref   85 tokens, test   85 tokens: IDENTICAL
+shell_script_direct.s8             ref   85 tokens, test   85 tokens: IDENTICAL
+shell_script_direct.s15            ref   85 tokens, test   85 tokens: IDENTICAL
+shell_script_direct.w63            ref   85 tokens, test   85 tokens: IDENTICAL
+shell_find_direct.p0               ref   37 tokens, test   37 tokens: IDENTICAL
+shell_find_direct.s8               ref   37 tokens, test   37 tokens: IDENTICAL
+shell_find_direct.s15              ref   37 tokens, test   37 tokens: IDENTICAL
+shell_find_direct.w63              ref   37 tokens, test   37 tokens: IDENTICAL
+shell_pipeline_direct.p0           ref   63 tokens, test   63 tokens: IDENTICAL
+shell_pipeline_direct.s8           ref   63 tokens, test   63 tokens: IDENTICAL
+shell_pipeline_direct.s15          ref   63 tokens, test   63 tokens: IDENTICAL
+shell_pipeline_direct.w63          ref   63 tokens, test   63 tokens: IDENTICAL
+gen_py_logstats.p0                 ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_logstats.s8                 ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_logstats.s15                ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_py_logstats.w63                ref 1000 tokens, test 1000 tokens: first divergence at token 744 (of 1000)
+gen_c_vec.p0                       ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_c_vec.s8                       ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_c_vec.s15                      ref 1000 tokens, test 1000 tokens: IDENTICAL
+gen_c_vec.w63                      ref 1000 tokens, test 1000 tokens: first divergence at token 90 (of 1000)
+edit_whole_py.p0                   ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py.s8                   ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py.s15                  ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py.w63                  ref 1000 tokens, test 1000 tokens: first divergence at token 404 (of 1000)
+edit_toolcall_py.p0                ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_toolcall_py.s8                ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_toolcall_py.s15               ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_toolcall_py.w63               ref 1000 tokens, test 1000 tokens: first divergence at token 172 (of 1000)
+shell_script.p0                    ref  102 tokens, test  102 tokens: IDENTICAL
+shell_script.s8                    ref  102 tokens, test  102 tokens: IDENTICAL
+shell_script.s15                   ref  102 tokens, test  102 tokens: IDENTICAL
+shell_script.w63                   ref  102 tokens, test  102 tokens: IDENTICAL
+shell_find.p0                      ref   85 tokens, test   85 tokens: IDENTICAL
+shell_find.s8                      ref   85 tokens, test   85 tokens: IDENTICAL
+shell_find.s15                     ref   85 tokens, test   85 tokens: IDENTICAL
+shell_find.w63                     ref   85 tokens, test   85 tokens: IDENTICAL
+reason_puzzle.p0                   ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_puzzle.s8                   ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_puzzle.s15                  ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_puzzle.w63                  ref 1000 tokens, test 1000 tokens: first divergence at token 715 (of 1000)
+reason_essay.p0                    ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_essay.s8                    ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_essay.s15                   ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_essay.w63                   ref 1000 tokens, test 1000 tokens: first divergence at token 461 (of 1000)
+reason_math.p0                     ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_math.s8                     ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_math.s15                    ref 1000 tokens, test 1000 tokens: IDENTICAL
+reason_math.w63                    ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py_ctx24k_direct.p0     ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py_ctx24k_direct.s8     ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py_ctx24k_direct.s15    ref 1000 tokens, test 1000 tokens: IDENTICAL
+edit_whole_py_ctx24k_direct.w63    ref 1000 tokens, test 1000 tokens: first divergence at token 502 (of 1000)
+editcopy_file_direct.p0            ref 1000 tokens, test 1000 tokens: IDENTICAL
+editcopy_file_direct.s8            ref 1000 tokens, test 1000 tokens: IDENTICAL
+editcopy_file_direct.s15           ref 1000 tokens, test 1000 tokens: IDENTICAL
+editcopy_file_direct.w63           ref 1000 tokens, test 1000 tokens: IDENTICAL
+editcopy_jsonl_direct.p0           ref 1000 tokens, test 1000 tokens: IDENTICAL
+editcopy_jsonl_direct.s8           ref 1000 tokens, test 1000 tokens: IDENTICAL
+editcopy_jsonl_direct.s15          ref 1000 tokens, test 1000 tokens: IDENTICAL
+editcopy_jsonl_direct.w63          ref 1000 tokens, test 1000 tokens: IDENTICAL
+editcopy_replace_direct.p0         ref 1000 tokens, test 1000 tokens: IDENTICAL
+editcopy_replace_direct.s8         ref 1000 tokens, test 1000 tokens: IDENTICAL
+editcopy_replace_direct.s15        ref 1000 tokens, test 1000 tokens: IDENTICAL
+editcopy_replace_direct.w63        ref 1000 tokens, test 1000 tokens: IDENTICAL

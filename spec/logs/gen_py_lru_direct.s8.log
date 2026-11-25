@@ -1,0 +1,13 @@
+loaded model to GPU
+[mem] weights loaded                     used 18.61 GB (free 32.28 GB of 50.90 GB)
+[mem] after init_batch (KV + buffers)    used 19.46 GB (free 31.44 GB of 50.90 GB)
+[mem] after init_pf                      used 19.94 GB (free 30.96 GB of 50.90 GB)
+config: lean=1 kv=fp16(full layers) maxctx=8192 nslots=1 ring=1040 ref_all=0
+prefill file data/spec/gen_py_lru_direct.txt: 92 tokens (slot 0)
+fast prefill: last-token argmax 37013
+prefill: 92 tokens, 1566.6 tokens/s (chunk B=512, GPU time)
+[mem] after prefill                      used 19.96 GB (free 30.94 GB of 50.90 GB)
+spec: measured step cost (ms, launch+sync) by B: 1:12.28 2:13.91 3:16.59 4:17.74 5:23.01 6:25.07 7:26.74 8:28.26 9:35.57
+spec: K=8 M=1 adaptive longest-match temp=0.00: generated 1000 tokens in 10.582 s = 94.41 tok/s (10.592 ms/token); steps 740, tokens/step 1.350
+spec: drafted 529, accepted 260 (acceptance 49.1%), mean accepted per step 0.351, mean accepted per drafting step 0.897, drafting steps 290 of 740
+spec: B histogram: 1:450 2:170 3:5 4:114 8:1

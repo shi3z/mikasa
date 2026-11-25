@@ -18,6 +18,8 @@ struct PFState {
     int *ids, *perm, *invp, *rmap, *sexp, *tile_e, *tile_p, *tile_c, *ntiles, *btok, *pos_arr, *slot_arr;
     int * arg_all = nullptr;
     float * part = nullptr;     // split-K partials
+    float * rbH[NAPP * 4] = {};  // per-application history buffers [3+PB][C] (rollback support, see init_pf_rollback); null = shared Hk/Hv/Hp/Hf
+    RbEntry * rb_tab = nullptr; int * rb_j = nullptr;
 };
 
 static void init_pf(PFState & S, int PB) {
@@ -40,6 +42,20 @@ static void init_pf(PFState & S, int PB) {
     const size_t ntl = T * NUSED / 16 + 256;
     CHECK(cudaMalloc(&S.tile_e, ntl * 4)); CHECK(cudaMalloc(&S.tile_p, ntl * 4)); CHECK(cudaMalloc(&S.tile_c, ntl * 4)); CHECK(cudaMalloc(&S.ntiles, 4));
     CHECK(cudaMalloc(&S.arg_all, T * 4)); CHECK(cudaMalloc(&S.btok, T * 4)); CHECK(cudaMalloc(&S.pos_arr, T * 4)); CHECK(cudaMalloc(&S.slot_arr, T * 4));
+}
+
+// Keep the per-application conv-input histories of a chunk so that the conv states can be rewound to "after j tokens" (batch_rollback equivalent for the
+// tensor-core path). Costs (PB+3) * (2*NKV*HD + 2*E) * 4 bytes per application.
+static void init_pf_rollback(Engine & g, PFState & S) {
+    std::vector<RbEntry> tab;
+    for (int il = 0; il < NAPP; ++il) {
+        const size_t C[4] = {(size_t) NKV * HD, (size_t) NKV * HD, (size_t) E, (size_t) E};
+        float * st[4] = {g.kstate[il], g.vstate[il], g.poststate[il], g.ffnstate[il]};
+        for (int k = 0; k < 4; ++k) { alloc_zero(&S.rbH[il * 4 + k], (S.PB + 3) * C[k]); tab.push_back({st[k], S.rbH[il * 4 + k], (int) C[k]}); }
+    }
+    CHECK(cudaMalloc(&S.rb_tab, tab.size() * sizeof(RbEntry)));
+    CHECK(cudaMemcpy(S.rb_tab, tab.data(), tab.size() * sizeof(RbEntry), cudaMemcpyHostToDevice));
+    CHECK(cudaMalloc(&S.rb_j, 4));
 }
 
 template <int FMT, int TB>
@@ -79,7 +95,9 @@ static void forward_prefill(Engine & g, BatchState & X, PFState & S, int T, int 
                                                                out, out_bs, E, B);
     };
 
+    float * const sHk = S.Hk, * const sHv = S.Hv, * const sHp = S.Hp, * const sHf = S.Hf;
     for (int il = 0; il < NAPP; ++il) {
+        if (S.rb_tab) { S.Hk = S.rbH[il * 4]; S.Hv = S.rbH[il * 4 + 1]; S.Hp = S.rbH[il * 4 + 2]; S.Hf = S.rbH[il * 4 + 3]; }
         const int ip = loop_layer(il);
         const Phys & P = g.phys[ip];
         const bool swa = app_is_swa(il);
@@ -227,6 +245,7 @@ static void forward_prefill(Engine & g, BatchState & X, PFState & S, int T, int 
         dump_cur(il, S.cur, B, s);
     }
 
+    S.Hk = sHk; S.Hv = sHv; S.Hp = sHp; S.Hf = sHf;
     // ----- output: only the last head_k tokens (head_all: validation mode, argmax of every token into S.arg_all)
     auto head = [&](int K0, int hk) {
         const float * blocks0 = S.blocks + (size_t) K0 * MS * E;
