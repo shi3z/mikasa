@@ -79,13 +79,16 @@ Prefill (ms/token, PCH = 128). Sequential is the earlier one-token-per-pass path
 | 48K | 13.71 (658 s) | **1.66** (1.71 in the app benchmark) |
 | 64K (65,535 tokens) | — | **1.70** |
 
-Long-context application-development benchmark (`bench_longctx.py`, harness side): a 48K or 64K slice of
-the project's own source is primed once as the system prompt and kept as a snapshot. Ten questions per
-length ask for a constant's value or the file that defines a CUDA kernel. Each answer appears in the slice,
-so ground truth is taken from the text itself.
+Long-context application-development benchmark (`bench_longctx.py`, harness side): a slice of the project's
+own source is primed once as the system prompt and kept as a snapshot. Questions ask for a constant's value or the
+file that defines a CUDA kernel; each answer appears in the slice, so ground truth is taken from the text itself.
+Question counts differ by length because they are drawn from facts inside each slice.
 
 | context | prime | prime ms/token | correct | decode |
 |---:|---:|---:|---:|---:|
+| 8K (8,015) | 13.0 s | 1.62 | 5/5 | 88.8 tok/s |
+| 16K (16,015) | 26.1 s | 1.63 | 8/8 | 77.4 tok/s |
+| 32K (32,015) | 53.6 s | 1.67 | 9/10 | 65.9 tok/s |
 | 48K (48,015) | 82.0 s | 1.71 | 10/10 | 57.7 tok/s |
 | 64K (64,015) | 112.2 s | 1.75 | 10/10 | 51.3 tok/s |
 
