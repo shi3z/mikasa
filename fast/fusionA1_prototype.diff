@@ -1,0 +1,201 @@
+diff -ruN a/src/batch_host.inc b/src/batch_host.inc
+--- a/src/batch_host.inc
++++ b/src/batch_host.inc
+@@ -186,21 +186,26 @@
+             gemvb_f32_row8_j<<<dim3(64, 1, 3), 256, 0, s>>>(CJ, X.hcat, X.r64, 2 * E, B);
+             kb_ctrl_gf_warp_j<<<dim3((E * 32 + 255) / 256, 1, 3), 256, 0, s>>>(CJ, X.r64, E, B);
+         }
+-        if (swa) kb_rms_rows3_9<<<3 * B, 256, 0, s>>>(X.inbuf, P.attn_norm, P.attn_norm, P.attn_norm, X.xs3, E, RMS_EPS);
+-        else     kb_rms_rows3_9<<<3 * B, 256, 0, s>>>(X.inbuf, P.q_inp, P.k_inp, P.v_inp, X.xs3, E, RMS_EPS);
++        // fusion A: the RMSNorm of the three attention-input rows runs in the prologue of the projection kernel (same arithmetic, no xs3 round trip)
++        static const bool fuseA_env = !std::getenv("MIKASA_NOFUSE_A");
++        const bool fuseA = fuseA_env && B <= 2;                       // the chunked q8_body (B >= 3) keeps the separate norm kernel
++        const float * nw0 = swa ? P.attn_norm : P.q_inp, * nw1 = swa ? P.attn_norm : P.k_inp, * nw2 = swa ? P.attn_norm : P.v_inp;
++        if (!fuseA && !std::getenv("MIKASA_ABL_RMS3")) kb_rms_rows3_9<<<3 * B, 256, 0, s>>>(X.inbuf, nw0, nw1, nw2, X.xs3, E, RMS_EPS);
++        const float * xin = fuseA ? X.inbuf : X.xs3;                       // raw rows (fused) or normalised rows
++        const float * f0 = fuseA ? nw0 : nullptr, * f1 = fuseA ? nw1 : nullptr, * f2 = fuseA ? nw2 : nullptr;
+ 
+         // ----- projections (K and V write straight into the history buffers, rows 3 + b)
+         {
+-            Q8JobsBuilder JB(E);
+-            JB.add(P.wq.qs, P.wq.sc, X.xs3, 3 * E, X.Qv, NH * HD, NH * HD);
+-            JB.add(P.wgate.qs, P.wgate.sc, X.xs3, 3 * E, X.G, NH * HD, NH * HD);
+-            JB.add(P.wk.qs, P.wk.sc, X.xs3 + E, 3 * E, X.Hk[il] + (size_t) 3 * NKV * HD, NKV * HD, NKV * HD);
+-            JB.add(P.wv.qs, P.wv.sc, X.xs3 + 2 * E, 3 * E, X.Hv[il] + (size_t) 3 * NKV * HD, NKV * HD, NKV * HD);
+-            JB.add(P.wrel.qs, P.wrel.sc, X.xs3, 3 * E, X.R0, NH * NREL, NH * NREL);
+-            JB.add_bf16(P.sink_w, X.xs3, 3 * E, X.sinks, NH, NH);
++            Q8JobsBuilder JB(E); JB.J.eps = RMS_EPS;
++            JB.add(P.wq.qs, P.wq.sc, xin, 3 * E, X.Qv, NH * HD, NH * HD, f0);
++            JB.add(P.wgate.qs, P.wgate.sc, xin, 3 * E, X.G, NH * HD, NH * HD, f0);
++            JB.add(P.wk.qs, P.wk.sc, xin + E, 3 * E, X.Hk[il] + (size_t) 3 * NKV * HD, NKV * HD, NKV * HD, f1);
++            JB.add(P.wv.qs, P.wv.sc, xin + 2 * E, 3 * E, X.Hv[il] + (size_t) 3 * NKV * HD, NKV * HD, NKV * HD, f2);
++            JB.add(P.wrel.qs, P.wrel.sc, xin, 3 * E, X.R0, NH * NREL, NH * NREL, f0);
++            JB.add_bf16(P.sink_w, xin, 3 * E, X.sinks, NH, NH, f0);
+             if (!swa) {
+-                JB.add_bf16(P.kconv_proj, X.xs3 + E, 3 * E, X.dynk, 32, 32);
+-                JB.add_bf16(P.vconv_proj, X.xs3 + 2 * E, 3 * E, X.dynv, 32, 32);
++                JB.add_bf16(P.kconv_proj, xin + E, 3 * E, X.dynk, 32, 32, f1);
++                JB.add_bf16(P.vconv_proj, xin + 2 * E, 3 * E, X.dynv, 32, 32, f2);
+             }
+             JB.launch(B, s);
+         }
+diff -ruN a/src/batch_kernels2.cuh b/src/batch_kernels2.cuh
+--- a/src/batch_kernels2.cuh
++++ b/src/batch_kernels2.cuh
+@@ -56,6 +56,41 @@
+ // NVFP4 matrices [mats][N][K]; scale = 4 bytes per 64-k block
+ static void register_nv_il(const uint8_t * qs, const uint8_t * sc, int N, int K, size_t mats) { register_il(qs, sc, mats, N, K / 64, 4); }
+ 
++// Fused RMSNorm (fusion A) on x rows already staged in shared memory (xs[tb * K + i], tb < BT, rows tb >= B are zero): same arithmetic as
++// kb_rms_rows3_9: thread t sums i = t + 256 j (j = 0..RMS_NV-1) in order, two-stage butterfly as block_sum, inv = rsqrtf(ss / n + eps),
++// out = (v * inv) * w. nwr[j] = w[t + 256 j] (loaded early by the caller). red: >= BT * 8 floats. Contains the barriers it needs, the caller
++// has to __syncthreads() after the staging and before using xs.
++template <int BT>
++__device__ __forceinline__ void rms_norm_smem(float * xs, int K, const float (&nwr)[RMS_NV], int B, float eps, float * red) {
++    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
++    float ss[BT], v[BT][RMS_NV];
++#pragma unroll
++    for (int tb = 0; tb < BT; ++tb) {
++        ss[tb] = 0.0f;
++#pragma unroll
++        for (int j = 0; j < RMS_NV; ++j) { const int i = threadIdx.x + 256 * j; v[tb][j] = (i < K) ? xs[tb * K + i] : 0.0f; ss[tb] += v[tb][j] * v[tb][j]; }
++    }
++#pragma unroll
++    for (int tb = 0; tb < BT; ++tb) {
++        float t = ss[tb];
++        for (int off = 16; off > 0; off >>= 1) t += __shfl_xor_sync(0xffffffffu, t, off);
++        if (lane == 0) red[tb * 8 + warp] = t;
++    }
++    __syncthreads();
++    float inv[BT];
++#pragma unroll
++    for (int tb = 0; tb < BT; ++tb) {
++        float t = (lane < 8) ? red[tb * 8 + lane] : 0.0f;       // every warp repeats the (cheap) second stage: no second barrier needed
++        for (int off = 16; off > 0; off >>= 1) t += __shfl_xor_sync(0xffffffffu, t, off);
++        inv[tb] = rsqrtf(t / K + eps);
++    }
++#pragma unroll
++    for (int tb = 0; tb < BT; ++tb)
++        if (tb < B)
++#pragma unroll
++            for (int j = 0; j < RMS_NV; ++j) { const int i = threadIdx.x + 256 * j; if (i < K) xs[tb * K + i] = v[tb][j] * inv[tb] * nwr[j]; }
++}
++
+ // ------------------------------------------------------------ Q8_0 GEMV ----
+ // y[b][row] = dot(W[row], x[b]) for B tokens; x[b] = x + b*xbs, y[b] = y + b*ybs.
+ // A warp owns 32 consecutive rows (one per lane); the K blocks of 32 are split over KS warps (partials reduced in
+@@ -140,7 +175,7 @@
+ template <int BT, int PD>
+ __device__ __forceinline__ void q8_body_full(float * xs, float * red, const int8_t * __restrict__ qs, const __half * __restrict__ sc,
+                                              const float * __restrict__ x, int xbs, float * __restrict__ y, int ybs, int K, int N, int B,
+-                                             int gblk) {
++                                             int gblk, const float * __restrict__ nw = nullptr, float eps = 0.0f) {
+     constexpr int KS = 8;
+     const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+     const int kp = warp;
+@@ -156,6 +191,11 @@
+         r0[p] = make_uint4(0, 0, 0, 0); r1[p] = r0[p]; rd[p] = 0.0f;
+         if (valid && p < ni) { const int blk = kp + p * KS; r0[p] = __ldg(q + blk * 64); r1[p] = __ldg(q + blk * 64 + 32); rd[p] = __half2float(s[blk * 32]); }
+     }
++    float nwr[RMS_NV];                                            // fused RMSNorm weight, loaded together with the x staging
++    if (nw) {
++#pragma unroll
++        for (int j = 0; j < RMS_NV; ++j) { const int i = threadIdx.x + 256 * j; nwr[j] = (i < K) ? __ldg(nw + i) : 0.0f; }
++    }
+     for (int i = threadIdx.x; i < BT * (K / 4); i += blockDim.x) {
+         const int tb = i / (K / 4), k4 = i - tb * (K / 4);
+         float4 v = make_float4(0, 0, 0, 0);
+@@ -163,6 +203,7 @@
+         reinterpret_cast<float4 *>(xs)[i] = v;
+     }
+     __syncthreads();
++    if (nw) { rms_norm_smem<BT>(xs, K, nwr, B, eps, red); __syncthreads(); }
+     float acc[BT];
+ #pragma unroll
+     for (int t = 0; t < BT; ++t) acc[t] = 0.0f;
+@@ -218,9 +259,10 @@
+ }
+ 
+ // several matrices with the same K in one launch (rows of consecutive jobs are laid out along grid.x); KS = 8, RG = 1
+-struct BfJob { const uint16_t * W; const float * x; int xbs; float * y; int ybs; int N; };
++struct BfJob { const uint16_t * W; const float * x; int xbs; float * y; int ybs; int N; const float * nw; };
+ struct Q8Jobs {
+-    const int8_t * qs[5]; const __half * sc[5]; const float * x[5]; float * y[5];
++    const int8_t * qs[5]; const __half * sc[5]; const float * x[5]; float * y[5]; const float * nw[5];   // nw: fused RMSNorm weight of the row (null: x is already normalised)
++    float eps;
+     int xbs[5], ybs[5], N[5], blk0[6];
+     int K;
+     int tg;                   // token groups per row block (adjacent in the grid)
+@@ -244,10 +286,43 @@
+         for (int q = 0; q < RMS_NV; ++q) { const int i = threadIdx.x + 256 * q; w[q] = (i < J.K) ? bf16_to_f32(wr[i]) : 0.0f; }
+ #pragma unroll
+         for (int bb = 0; bb < MB; ++bb) acc[bb] = 0.0f;
++        if (f.nw) {       // fused RMSNorm (B <= 2): one load of the raw rows, norm in registers, same order as kb_rms_rows3_9
++            float nwr[RMS_NV], xr[2][RMS_NV], ss[2] = {0.0f, 0.0f}, inv[2];
++#pragma unroll
++            for (int q = 0; q < RMS_NV; ++q) { const int i = threadIdx.x + 256 * q; nwr[q] = (i < J.K) ? f.nw[i] : 0.0f; }
++#pragma unroll
++            for (int bb = 0; bb < 2; ++bb)
++#pragma unroll
++                for (int q = 0; q < RMS_NV; ++q) {
++                    const int i = threadIdx.x + 256 * q;
++                    xr[bb][q] = (bb < B && i < J.K) ? f.x[(size_t) bb * f.xbs + i] : 0.0f; ss[bb] += xr[bb][q] * xr[bb][q];
++                }
++            const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
++#pragma unroll
++            for (int bb = 0; bb < 2; ++bb) {
++                float t = ss[bb];
++                for (int off = 16; off > 0; off >>= 1) t += __shfl_xor_sync(0xffffffffu, t, off);
++                if (lane == 0) redb[bb * 8 + warp] = t;
++            }
++            __syncthreads();
+ #pragma unroll
+-        for (int bb = 0; bb < MB; ++bb) if (bb < B) {
++            for (int bb = 0; bb < 2; ++bb) {
++                float t = (lane < 8) ? redb[bb * 8 + lane] : 0.0f;
++                for (int off = 16; off > 0; off >>= 1) t += __shfl_xor_sync(0xffffffffu, t, off);
++                inv[bb] = rsqrtf(t / J.K + J.eps);
++            }
++            __syncthreads();                                       // redb is reused by block_sum_multi below
++#pragma unroll
++            for (int bb = 0; bb < 2; ++bb) if (bb < B) {
++#pragma unroll
++                for (int q = 0; q < RMS_NV; ++q) { const int i = threadIdx.x + 256 * q; if (i < J.K) acc[bb] += w[q] * (xr[bb][q] * inv[bb] * nwr[q]); }
++            }
++        } else {
+ #pragma unroll
+-            for (int q = 0; q < RMS_NV; ++q) { const int i = threadIdx.x + 256 * q; if (i < J.K) acc[bb] += w[q] * f.x[(size_t) bb * f.xbs + i]; }
++            for (int bb = 0; bb < MB; ++bb) if (bb < B) {
++#pragma unroll
++                for (int q = 0; q < RMS_NV; ++q) { const int i = threadIdx.x + 256 * q; if (i < J.K) acc[bb] += w[q] * f.x[(size_t) bb * f.xbs + i]; }
++            }
+         }
+         block_sum_multi(acc, B, redb);
+         if (threadIdx.x == 0) for (int bb = 0; bb < B; ++bb) f.y[(size_t) bb * f.ybs + r] = acc[bb];
+@@ -256,8 +331,9 @@
+     const int gb = blockIdx.x / J.tg, tok0 = (blockIdx.x % J.tg) * BT;
+     int j = 0;
+     while (gb >= J.blk0[j + 1]) ++j;
++    const float * nwj = J.nw[j];
+     if (FULL && J.full) q8_body_full<(FULL ? BT : 1), Q8PD>(xs, red, J.qs[j], J.sc[j], J.x[j] + (size_t) tok0 * J.xbs[j], J.xbs[j], J.y[j] + (size_t) tok0 * J.ybs[j], J.ybs[j],
+-                      J.K, J.N[j], min(BT, B - tok0), gb - J.blk0[j]);
++                      J.K, J.N[j], min(BT, B - tok0), gb - J.blk0[j], nwj, J.eps);
+     else q8_body<BT, 8, 1>(xs, red, J.qs[j], J.sc[j], J.x[j] + (size_t) tok0 * J.xbs[j], J.xbs[j], J.y[j] + (size_t) tok0 * J.ybs[j], J.ybs[j],
+                       J.K, J.N[j], min(BT, B - tok0), gb - J.blk0[j]);
+ }
+@@ -304,11 +380,11 @@
+ }
+ struct Q8JobsBuilder {
+     Q8Jobs J; int n = 0;
+-    Q8JobsBuilder(int K) { J.K = K; J.blk0[0] = 0; J.nbf = 0; static const int f = std::getenv("MIKASA_Q8MFULL") ? std::atoi(std::getenv("MIKASA_Q8MFULL")) : 1; J.full = f; }
++    Q8JobsBuilder(int K) { J.K = K; J.eps = 0.0f; for (int i = 0; i < 5; ++i) J.nw[i] = nullptr; J.blk0[0] = 0; J.nbf = 0; static const int f = std::getenv("MIKASA_Q8MFULL") ? std::atoi(std::getenv("MIKASA_Q8MFULL")) : 1; J.full = f; }
+     int bf_rows = 0;
+-    void add_bf16(const uint16_t * W, const float * x, int xbs, float * y, int ybs, int N) { J.bf[J.nbf++] = BfJob{W, x, xbs, y, ybs, N}; bf_rows += N; }
+-    void add(const int8_t * qs, const __half * sc, const float * x, int xbs, float * y, int ybs, int N) {
+-        J.qs[n] = tmap(qs); J.sc[n] = tmap(sc); J.x[n] = x; J.xbs[n] = xbs; J.y[n] = y; J.ybs[n] = ybs; J.N[n] = N;
++    void add_bf16(const uint16_t * W, const float * x, int xbs, float * y, int ybs, int N, const float * nw = nullptr) { J.bf[J.nbf++] = BfJob{W, x, xbs, y, ybs, N, nw}; bf_rows += N; }
++    void add(const int8_t * qs, const __half * sc, const float * x, int xbs, float * y, int ybs, int N, const float * nw = nullptr) {
++        J.nw[n] = nw; J.qs[n] = tmap(qs); J.sc[n] = tmap(sc); J.x[n] = x; J.xbs[n] = xbs; J.y[n] = y; J.ybs[n] = ybs; J.N[n] = N;
+         J.blk0[n + 1] = J.blk0[n] + (N + 31) / 32; ++n;
+     }
+     void launch(int B, cudaStream_t s) {
