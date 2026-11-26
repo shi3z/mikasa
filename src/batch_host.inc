@@ -60,9 +60,9 @@ static void init_batch(Engine & g, BatchState & X, const KVOpts & ko = KVOpts())
     CHECK(cudaDeviceSynchronize());
     alloc_zero(&X.emb, MB * E); alloc_zero(&X.cur, MB * E); alloc_zero(&X.prelude_cur, MB * E); alloc_zero(&X.bank_last, MB * E);
     alloc_zero(&X.bank, (size_t) MB * MS_STATES * E); alloc_zero(&X.blocks, (size_t) MB * MS_STATES * E);
-    alloc_zero(&X.scores, MB * SC_STRIDE); alloc_zero(&X.inv, MB * INV_STRIDE);
-    alloc_zero(&X.inbuf, MB * 3 * E); alloc_zero(&X.xs3, MB * 3 * E); alloc_zero(&X.msgs, MB * 4 * E); alloc_zero(&X.hcat, MB * 2 * E);
-    alloc_zero(&X.r64, MB * 64); alloc_zero(&X.Qv, MB * NH * HD); alloc_zero(&X.R0, MB * NH * NREL); alloc_zero(&X.G, MB * NH * HD);
+    alloc_zero(&X.scores, 3 * MB * SC_STRIDE); alloc_zero(&X.inv, 3 * MB * INV_STRIDE);
+    alloc_zero(&X.inbuf, MB * 3 * E); alloc_zero(&X.xs3, MB * 3 * E); alloc_zero(&X.msgs, MB * 4 * E); alloc_zero(&X.hcat, 3 * MB * 2 * E);
+    alloc_zero(&X.r64, 3 * MB * 64); alloc_zero(&X.Qv, MB * NH * HD); alloc_zero(&X.R0, MB * NH * NREL); alloc_zero(&X.G, MB * NH * HD);
     alloc_zero(&X.sinks, MB * NH); alloc_zero(&X.dynk, MB * 32); alloc_zero(&X.dynv, MB * 32);
     alloc_zero(&X.Kconv, MB * NKV * HD); alloc_zero(&X.Vconv, MB * NKV * HD); alloc_zero(&X.Qc, MB * NH * HD);
     alloc_zero(&X.Rc, MB * NH * NREL); alloc_zero(&X.O, MB * NH * HD); alloc_zero(&X.gated, MB * NH * HD);
@@ -147,44 +147,66 @@ static void forward_batch(Engine & g, BatchState & X, int B, int multi, cudaStre
             nb = prelude_nb;
             kb_copy<<<dim3(eb, B), 256, 0, s>>>(X.prelude_cur, E, X.cur, E, E);
         }
-        if (in_core_range && pass > 0) {
-            have_msgs = true;
-            const int row = 2 * (ip - CORE_START);
-            const int Sb = bank_nb + 1;
-            kb_mix_scores2<<<dim3(Sb, B), 256, 0, s>>>(X.bank, MS * E, bank_nb, X.bank_last, E, g.loop_res_query + (size_t) row * E, 2,
-                                                      X.scores, X.inv, Sb, E, RMS_EPS);
-            kb_mix_out2<<<dim3(eb, 2, B), 256, 0, s>>>(X.bank, MS * E, bank_nb, X.bank_last, E, X.scores, X.inv, msg(0), 4 * E, 1, Sb, E);
-            kb_mix_scores2<<<dim3(Sb, B), 256, 0, s>>>(X.bank, MS * E, bank_nb, X.bank_last, E, g.loop_kv_res_query + (size_t) row * E, 2,
-                                                      X.scores, X.inv, Sb, E, RMS_EPS);
-            kb_mix_out2<<<dim3(eb, 2, B), 256, 0, s>>>(X.bank, MS * E, bank_nb, X.bank_last, E, X.scores, X.inv, msg(1), 4 * E, 1, Sb, E);
-        }
+        if (in_core_range && pass > 0) have_msgs = true;
 
-        // ----- attention input
-        if (ip > 0) {
-            if (swa) mix_cur(P.attn_res_query, 1, X.inbuf, 3 * E, 3);
-            else     mix_cur(P.attn_res_query, 3, X.inbuf, 3 * E, 1);
-        } else {
-            kb_rep3<<<dim3(eb, B), 256, 0, s>>>(X.cur, X.inbuf, E);
+        // ----- attention input (and, in the looped passes, the two bank mixes that feed the loop controls: independent, one launch each stage)
+        {
+            MixJobs MJ; int nj = 0, Smax = 0, nqmax = 0;
+            auto addjob = [&](const float * head, int head_bs, int nhead, const float * tail, int tail_bs, const float * q, int nq, float * out, int out_bs, int rep, int S) {
+                MJ.j[nj++] = MixJob{head, head_bs, nhead, tail, tail_bs, q, nq, out, out_bs, rep, S};
+                Smax = std::max(Smax, S); nqmax = std::max(nqmax, nq);
+            };
+            if (have_msgs) {
+                const int row = 2 * (ip - CORE_START);
+                const int Sb = bank_nb + 1;
+                addjob(X.bank, MS * E, bank_nb, X.bank_last, E, g.loop_res_query + (size_t) row * E, 2, msg(0), 4 * E, 1, Sb);
+                addjob(X.bank, MS * E, bank_nb, X.bank_last, E, g.loop_kv_res_query + (size_t) row * E, 2, msg(1), 4 * E, 1, Sb);
+            }
+            if (ip > 0) {
+                if (swa) addjob(X.blocks, MS * E, nb, X.cur, E, P.attn_res_query, 1, X.inbuf, 3 * E, 3, nb + 1);
+                else     addjob(X.blocks, MS * E, nb, X.cur, E, P.attn_res_query, 3, X.inbuf, 3 * E, 1, nb + 1);
+            } else {
+                kb_rep3<<<dim3(eb, B), 256, 0, s>>>(X.cur, X.inbuf, E);
+            }
+            if (nj == 1) {
+                const MixJob & m = MJ.j[0];
+                kb_mix_scores2<<<dim3(m.S, B), 256, 0, s>>>(m.head, m.head_bs, m.nhead, m.tail, m.tail_bs, m.q, m.nq, X.scores, X.inv, m.S, E, RMS_EPS);
+                kb_mix_out2<<<dim3(eb, m.nq, B), 256, 0, s>>>(m.head, m.head_bs, m.nhead, m.tail, m.tail_bs, X.scores, X.inv, m.out, m.out_bs, m.rep, m.S, E);
+            } else if (nj > 1) {
+                for (int i = nj; i < 3; ++i) MJ.j[i] = MJ.j[0];
+                kb_mix_scores_j<<<dim3(Smax, B, nj), 256, 0, s>>>(MJ, X.scores, X.inv, E, RMS_EPS);
+                kb_mix_out_j<<<dim3(eb, nqmax, B * nj), 256, 0, s>>>(MJ, X.scores, X.inv, E, B);
+            }
         }
-        if (have_msgs)
+        if (have_msgs) {
+            CtlJobs CJ;
             for (int j = 0; j < 3; ++j)
-                control_b(P, X.inbuf + (size_t) j * E, 3 * E, msg(j), 4 * E, j, X.inbuf + (size_t) j * E, 3 * E);
+                CJ.j[j] = CtlJob{X.inbuf + (size_t) j * E, 3 * E, msg(j), 4 * E, P.loop_down[j], P.loop_gain[j], P.loop_forget[j], X.inbuf + (size_t) j * E, 3 * E};
+            kb_rms2_rows9_j<<<dim3(2, B, 3), 256, 0, s>>>(CJ, X.hcat, nullptr, E, RMS_EPS);
+            gemvb_f32_row8_j<<<dim3(64, 1, 3), 256, 0, s>>>(CJ, X.hcat, X.r64, 2 * E, B);
+            kb_ctrl_gf_warp_j<<<dim3((E * 32 + 255) / 256, 1, 3), 256, 0, s>>>(CJ, X.r64, E, B);
+        }
         if (swa) kb_rms_rows3_9<<<3 * B, 256, 0, s>>>(X.inbuf, P.attn_norm, P.attn_norm, P.attn_norm, X.xs3, E, RMS_EPS);
         else     kb_rms_rows3_9<<<3 * B, 256, 0, s>>>(X.inbuf, P.q_inp, P.k_inp, P.v_inp, X.xs3, E, RMS_EPS);
 
         // ----- projections (K and V write straight into the history buffers, rows 3 + b)
-        launch_gemvb_q8(P.wq.qs, P.wq.sc, X.xs3, 3 * E, X.Qv, NH * HD, E, NH * HD, B, s);
-        launch_gemvb_q8(P.wk.qs, P.wk.sc, X.xs3 + E, 3 * E, X.Hk[il] + (size_t) 3 * NKV * HD, NKV * HD, E, NKV * HD, B, s);
-        launch_gemvb_q8(P.wv.qs, P.wv.sc, X.xs3 + 2 * E, 3 * E, X.Hv[il] + (size_t) 3 * NKV * HD, NKV * HD, E, NKV * HD, B, s);
-        launch_gemvb_q8(P.wrel.qs, P.wrel.sc, X.xs3, 3 * E, X.R0, NH * NREL, E, NH * NREL, B, s);
-        launch_gemvb_q8(P.wgate.qs, P.wgate.sc, X.xs3, 3 * E, X.G, NH * HD, E, NH * HD, B, s);
-        gemvb_bf16_row9<<<NH, 256, 0, s>>>(P.sink_w, X.xs3, 3 * E, X.sinks, NH, E, NH, B);
+        {
+            Q8JobsBuilder JB(E);
+            JB.add(P.wq.qs, P.wq.sc, X.xs3, 3 * E, X.Qv, NH * HD, NH * HD);
+            JB.add(P.wgate.qs, P.wgate.sc, X.xs3, 3 * E, X.G, NH * HD, NH * HD);
+            JB.add(P.wk.qs, P.wk.sc, X.xs3 + E, 3 * E, X.Hk[il] + (size_t) 3 * NKV * HD, NKV * HD, NKV * HD);
+            JB.add(P.wv.qs, P.wv.sc, X.xs3 + 2 * E, 3 * E, X.Hv[il] + (size_t) 3 * NKV * HD, NKV * HD, NKV * HD);
+            JB.add(P.wrel.qs, P.wrel.sc, X.xs3, 3 * E, X.R0, NH * NREL, NH * NREL);
+            JB.add_bf16(P.sink_w, X.xs3, 3 * E, X.sinks, NH, NH);
+            if (!swa) {
+                JB.add_bf16(P.kconv_proj, X.xs3 + E, 3 * E, X.dynk, 32, 32);
+                JB.add_bf16(P.vconv_proj, X.xs3 + 2 * E, 3 * E, X.dynv, 32, 32);
+            }
+            JB.launch(B, s);
+        }
 
         // ----- convolutions
-        if (!swa) {
-            gemvb_bf16_row9<<<32, 256, 0, s>>>(P.kconv_proj, X.xs3 + E, 3 * E, X.dynk, 32, E, 32, B);
-            gemvb_bf16_row9<<<32, 256, 0, s>>>(P.vconv_proj, X.xs3 + 2 * E, 3 * E, X.dynv, 32, E, 32, B);
-        }
+
         kb_conv4_kv<<<dim3((NKV * HD + 255) / 256, 2), 256, 0, s>>>(X.Hk[il], g.kstate[il], P.kconv, X.dynk, X.Kconv,
                                                                   X.Hv[il], g.vstate[il], P.vconv, X.dynv, X.Vconv, NKV * HD, B, swa ? 0 : 1,
                                                                   multi, X.slot_arr, X.Sxk[il], X.Sxv[il]);
@@ -223,11 +245,10 @@ static void forward_batch(Engine & g, BatchState & X, int B, int multi, cudaStre
         if (ip % BLOCK == 0) {
             kb_copy<<<dim3(eb, B), 256, 0, s>>>(X.cur, E, X.blocks + (size_t) nb * E, MS * E, E);
             nb++;
-            kb_conv4_res<<<eb, 256, 0, s>>>(X.Hp[il], g.poststate[il], P.post_conv, X.cur, X.cur, E, B, 0, multi, X.slot_arr, X.Sxp[il]);
+            kb_conv4_res<<<eb, 256, 0, s>>>(X.Hp[il], g.poststate[il], P.post_conv, X.cur, X.cur, E, B, 0, multi, X.slot_arr, X.Sxp[il], X.ffn_inp);
         } else {
-            kb_conv4_res<<<eb, 256, 0, s>>>(X.Hp[il], g.poststate[il], P.post_conv, X.cur, X.cur, E, B, 1, multi, X.slot_arr, X.Sxp[il]);
+            kb_conv4_res<<<eb, 256, 0, s>>>(X.Hp[il], g.poststate[il], P.post_conv, X.cur, X.cur, E, B, 1, multi, X.slot_arr, X.Sxp[il], X.ffn_inp);
         }
-        kb_copy<<<dim3(eb, B), 256, 0, s>>>(X.cur, E, X.ffn_inp, E, E);
 
         // ----- FFN input mix, loop control, norm
         mix_cur(P.ffn_res_query, 1, X.mixed, E, 1);
@@ -235,22 +256,37 @@ static void forward_batch(Engine & g, BatchState & X, int B, int multi, cudaStre
         kb_rms_rows9<<<B, 256, 0, s>>>(X.mixed, P.ffn_norm, X.xf, E, RMS_EPS);
 
         // ----- MoE: router, expert -> tokens grouping, grouped expert GEMVs
-        gemvb_f32_row9<<<NEXP, 256, 0, s>>>(P.router_w, X.xf, E, X.lrouter, NEXP, E, NEXP, B);
-        kb_router_top8<<<B, NEXP, 0, s>>>(X.lrouter, P.exp_bias, X.ids, X.wts, W_SCALE);
-        kb_group<<<1, NEXP, 0, s>>>(X.ids, B, X.grp_e, X.grp_n, X.grp_t, X.grp_nu);
+        if (B <= 2 && !std::getenv("MIKASA_NOFUSE")) {
+            kb_router_fused<<<NEXP, 256, 0, s>>>(P.router_w, X.xf, E, X.lrouter, P.exp_bias, X.ids, X.wts, W_SCALE, E, B,
+                                                 X.grp_e, X.grp_n, X.grp_t, X.grp_nu);
+        } else {
+            gemvb_f32_row9<<<NEXP, 256, 0, s>>>(P.router_w, X.xf, E, X.lrouter, NEXP, E, NEXP, B);
+            kb_router_top8<<<B, NEXP, 0, s>>>(X.lrouter, P.exp_bias, X.ids, X.wts, W_SCALE);
+            kb_group<<<1, NEXP, 0, s>>>(X.ids, B, X.grp_e, X.grp_n, X.grp_t, X.grp_nu);
+        }
         const int nu_max = std::min(NEXP, NUSED * B);
+        if (!P.exp_q8 && B <= 2 && std::getenv("MIKASA_MOEFUSE")) {   // bit-identical but only ~0.5 % faster and needs co-resident blocks: off by default
+            const dim3 grid(2304 / 128, nu_max);
+            if (B == 1)
+                nvfp4_moe_fused<1><<<grid, 128, 1 * 2304 * sizeof(float), s>>>(tmap(P.gu_qs), tmap(P.gu_sc), tmap(P.dn_qs), tmap(P.dn_sc), X.xf, E, 3, X.gu, X.dn,
+                    P.gu_scale ? P.gu_scale : g.ones, X.ids, SITU_BETA, SITU_LB, 2304, X.grp_e, X.grp_n, X.grp_t, X.grp_nu);
+            else
+                nvfp4_moe_fused<2><<<grid, 128, 2 * 2304 * sizeof(float), s>>>(tmap(P.gu_qs), tmap(P.gu_sc), tmap(P.dn_qs), tmap(P.dn_sc), X.xf, E, 3, X.gu, X.dn,
+                    P.gu_scale ? P.gu_scale : g.ones, X.ids, SITU_BETA, SITU_LB, 2304, X.grp_e, X.grp_n, X.grp_t, X.grp_nu);
+        } else {
         if (P.exp_q8) {
-            q8_experts_rows2b<4><<<dim3(2304 / 128, nu_max), 128, 0, s>>>(tmap(P.gu_q8), tmap(P.gu_q8s), X.xf, E, 3, X.gu, E, 2304,
-                                                                              X.grp_e, X.grp_n, X.grp_t, X.grp_nu);
+            q8_experts_ks<4><<<dim3(2304 / 32, nu_max), 256, 0, s>>>(tmap(P.gu_q8), tmap(P.gu_q8s), X.xf, E, 3, X.gu, E, 2304,
+                                                                         X.grp_e, X.grp_n, X.grp_t, X.grp_nu);
         } else {
             launch_nvfp4_nch<2304>(P.gu_qs, P.gu_sc, X.xf, E, 3, X.gu, 2304, B, X.grp_e, X.grp_n, X.grp_t, X.grp_nu, s);
         }
         kb_situ<<<dim3((FFN + 255) / 256, NUSED * B), 256, 0, s>>>(X.gu, P.gu_scale ? P.gu_scale : g.ones, X.ids, X.hbuf, SITU_BETA, SITU_LB);
         if (P.exp_q8) {
-            q8_experts_rows2b<4><<<dim3(E / 128, nu_max), 128, 0, s>>>(tmap(P.dn_q8), tmap(P.dn_q8s), X.hbuf, FFN, 0, X.dn, FFN, E,
-                                                                           X.grp_e, X.grp_n, X.grp_t, X.grp_nu);
+            q8_experts_ks<4><<<dim3(E / 32, nu_max), 256, 0, s>>>(tmap(P.dn_q8), tmap(P.dn_q8s), X.hbuf, FFN, 0, X.dn, FFN, E,
+                                                                      X.grp_e, X.grp_n, X.grp_t, X.grp_nu);
         } else {
             launch_nvfp4_nch<1152>(P.dn_qs, P.dn_sc, X.hbuf, FFN, 0, X.dn, E, B, X.grp_e, X.grp_n, X.grp_t, X.grp_nu, s);
+        }
         }
         kb_moe_conv_res<<<(E + 63) / 64, 64, 0, s>>>(X.dn, P.dn_scale ? P.dn_scale : g.ones, X.ids, X.wts, X.Hf[il], g.ffnstate[il],
                                                     P.ffn_post_conv, X.ffn_inp, X.cur, E, B, multi, X.slot_arr, X.Sxf[il]);
@@ -262,7 +298,7 @@ static void forward_batch(Engine & g, BatchState & X, int B, int multi, cudaStre
     kb_rms_rows9<<<B, 256, 0, s>>>(X.head_in, g.output_norm, X.xnorm, E, RMS_EPS);
     launch_gemvb_q8(g.head.qs, g.head.sc, X.xnorm, E, X.logits, NVOCAB_PAD, E, NVOCAB_PAD, B, s);
     kb_softcap_cut<<<dim3((NVOCAB + 255) / 256, B), 256, 0, s>>>(X.logits, NVOCAB, NVOCAB_PAD, SOFTCAP);
-    kb_argmax<<<B, 1024, 0, s>>>(X.logits, NVOCAB, NVOCAB_PAD, X.barg);
+    kb_argmax_mb<<<dim3(B, 32), 1024, 0, s>>>(X.logits, NVOCAB, NVOCAB_PAD, X.barg);
 }
 
 // Rewind the carried conv states to "after j tokens of the last forward_batch" (0 <= j <= B). KV entries at positions

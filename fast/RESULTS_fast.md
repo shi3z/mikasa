@@ -1,0 +1,148 @@
+# RESULTS_fast: faster exact decoding in the lean engine (RTX A6000, 2026-11-26)
+
+Everything here is exact: **every generated token file and every logit dump is bit-identical to the baseline** (commit 360dcc3). Work was done only in `~/rrr/mikasa-fast`, nothing committed.
+
+## Headline
+* Lean B=1 step (`forward_batch`, what the daemon and the spec loop run): **12.3 -> 9.9 ms (78.6 -> ~97 tok/s plain, 1.25x)**. The old non-lean `forward_token` graph measures 10.63 ms/token on this machine today (`./mikasa_fast model out --gen 128 --reps 5`), so the lean path is now 7 % faster than it, instead of 15 % slower.
+* Verify passes B=2..16: 1.12x - 1.22x faster (table below). The B=5 and B=9 jumps went from +4.8/+6.3 ms to +3.1/+2.6 ms (the remainder is real: every extra token brings about 6-8 new experts = 1.2-1.6 GB of weights, about 2.1 ms at 768 GB/s).
+* Spec decoding (`--spec 15 --spec-m 1 --spec-copy 4`), 15 workloads: 1.10x - 1.41x over the old spec numbers, and 1.3x - 3.4x over old plain decoding.
+* Long context S=1 decode (ms): 300 ctx 12.6 -> 10.1, 64K ctx 16.1 -> 13.6 (attention at 64K is at the FP16-KV bandwidth floor already).
+
+## Validation (all on the final binary `mikasa_fast`, built with the README command)
+| check | result |
+|---|---|
+| `tools/run_bitexact.sh`: md5 of logits of 48 B=1 decode steps and of the last 32 positions for same-sequence batches B=2,3,5,8,9,13,16 (`--pf-b B`) | identical to baseline in all 8 cases (and the baseline itself gives the same md5 for every B: per-token arithmetic is B-independent; the changes keep that) |
+| `tools/run_fast_check.sh`: plain (`--spec 0`) and spec token files, 1000 tokens, 15 workloads (30 files) | all 30 identical to the baseline run **and** to the committed `spec/logs/*.old.txt` |
+| `--batch-test` (non-lean oracle, `--probe ~/rrr/spectral-ai-src/spec_probe`) | `ORACLE TEST: argmax matches at every position` (max abs 1.6e-4, rel 6.0e-6 as before) |
+| `--multi-check` (4 slots, multi-sequence step vs single) | max diff 0 in all 4 slots (bit-identical, as before) |
+| `tools/run_daemon_tests.sh build refs daemon` (exact, cancel, conc, cache, sample, limit) | all pass (21 IDENTICAL checks, cancel 10 ms / 114 ms, daemon refs equal committed logs) |
+
+## What changed (all in `src/batch_*.{cuh,inc}`; arithmetic order per output element is unchanged)
+1. **One launch for wq, wgate, wk, wv, wrel (+ the tiny BF16 sink / conv-projection GEMVs as extra blocks)**: `gemvb2_q8m` (`Q8Jobs`). Saves 4-7 launches per layer and overlaps the small matrices (wk/wv ran at 45 % of bandwidth). Largest single gain (about 1.2 ms at B=1).
+2. **Q8 GEMV tile choice per B**: BT = B exactly for B<=8 (templates 1..8), for B>=9 two token groups of ceil(B/2). Token groups are *adjacent in the grid* so the second group hits the first group's weights in L2 (previously a second pass re-read DRAM). Removes most of the old BT=4->8->16 cliffs. For BT<=2 a variant stages x once and prefetches 3 blocks deep (`q8_body_full`), wo 957 -> 853 us.
+3. **Q8_0 experts** (4 layers): K split over 8 warps with the per-block partials stored and re-accumulated in the original order by one FMA chain (`q8_experts_ks`): 874 -> 555 us. (Bit-exact because the order of `acc += d*t` is kept; FMA contraction matches.)
+4. **Horizontal fusion of independent chains**: the two bank mixes + the attention-input mix in one launch pair (`kb_mix_scores_j/out_j`), the 3 loop controls of the attention inputs in one launch per stage (`*_j` kernels), the ffn_inp copy folded into `kb_conv4_res`.
+5. **Router**: gemv + top-8 + expert grouping in one kernel for B<=2 (last-block ticket; top-8 by rank counting instead of 8 sequential reductions) 555 -> 388 us.
+6. Small: `gemvb_f32_row8` loads hoisted, 4-way `block_sum4` in the mix kernel, multi-block arg-max (39 -> 7 us), Q8-expert loads 4-deep.
+Launches per token: 1738 -> 1094 (B=1).
+
+## Time per step vs B (distinct tokens, synthetic zero KV, 40 graph reps; `--time-b`, `TIMEB_DIVERSE=1`)
+
+ctx 300 (ms per forward_batch call):
+
+| B | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| before | 12.3 | 14.3 | 17.1 | 18.7 | 23.4 | 25.4 | 27.6 | 29.6 | 35.9 | 38.6 | 40.7 | 42.9 | 45.2 | 47.8 | 49.5 | 52.0 |
+| after | 9.9 | 12.3 | 15.1 | 16.6 | 19.6 | 21.6 | 23.2 | 25.4 | 28.0 | 30.4 | 32.9 | 35.0 | 36.8 | 38.8 | 41.1 | 43.2 |
+| speedup | 1.24x | 1.16x | 1.13x | 1.13x | 1.19x | 1.18x | 1.19x | 1.16x | 1.28x | 1.27x | 1.24x | 1.23x | 1.23x | 1.23x | 1.20x | 1.20x |
+| after, ms/token | 9.92 | 6.17 | 5.04 | 4.14 | 3.92 | 3.60 | 3.32 | 3.18 | 3.11 | 3.04 | 2.99 | 2.91 | 2.83 | 2.77 | 2.74 | 2.70 |
+| increment vs B-1, before / after | - | 2.0/2.4 | 2.8/2.8 | 1.6/1.4 | 4.8/3.1 | 2.0/2.0 | 2.2/1.7 | 2.0/2.2 | 6.3/2.6 | 2.7/2.4 | 2.1/2.5 | 2.2/2.1 | 2.4/1.8 | 2.5/2.0 | 1.7/2.3 | 2.5/2.1 |
+
+ctx 4000 (ms per forward_batch call):
+
+| B | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| before | 12.9 | 14.6 | 17.6 | 19.3 | 24.4 | 27.1 | 29.2 | 31.0 | 38.1 | 40.8 | 43.1 | 45.0 | 48.2 | 50.8 | 53.0 | 55.8 |
+| after | 10.5 | 12.6 | 15.3 | 16.8 | 19.8 | 22.8 | 24.6 | 26.5 | 29.8 | 32.2 | 35.0 | 36.8 | 39.4 | 41.6 | 44.2 | 46.7 |
+| speedup | 1.23x | 1.17x | 1.15x | 1.15x | 1.23x | 1.18x | 1.19x | 1.17x | 1.28x | 1.26x | 1.23x | 1.22x | 1.22x | 1.22x | 1.20x | 1.20x |
+| after, ms/token | 10.52 | 6.28 | 5.11 | 4.21 | 3.96 | 3.81 | 3.51 | 3.31 | 3.32 | 3.22 | 3.18 | 3.07 | 3.03 | 2.97 | 2.95 | 2.92 |
+| increment vs B-1, before / after | - | 1.7/2.0 | 3.0/2.8 | 1.6/1.5 | 5.1/3.0 | 2.7/3.1 | 2.1/1.7 | 1.8/1.9 | 7.1/3.3 | 2.7/2.4 | 2.3/2.7 | 2.0/1.9 | 3.1/2.6 | 2.7/2.2 | 2.2/2.6 | 2.7/2.4 |
+
+The old calibration in the spec loop uses the same token repeated; with distinct tokens the costs are practically the same (checked), so the adaptive draft-width selection sees the cheaper steps automatically.
+
+Long-context decode (`--time-decode`, ms/step, 4 slots allocated, maxctx 65536):
+
+| context | S=1 before | S=1 after | S=4 before | S=4 after |
+|---:|---:|---:|---:|---:|
+| 300 | 12.56 | 10.05 | 20.37 | 18.29 |
+| 1024 | 13.09 | 10.59 | 21.72 | 19.64 |
+| 8192 | 13.23 | 10.73 | 22.53 | 20.37 |
+| 32768 | 14.43 | 11.90 | 27.35 | 25.11 |
+| 65000 | 16.12 | 13.58 | 33.78 | 31.54 |
+
+## tok/s per workload (1000 tokens, `--lean --kv16 --nslots 1 --maxctx 8192 --pf-fast 512`; "plain" = `--spec 0`, "spec" = `--spec 15 --spec-m 1 --spec-copy 4`)
+| workload | tokens | plain before | plain after | spec before | spec after | spec after/before | spec after / plain before | tokens/step (spec, after) | token files identical |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| edit_diff_cpp_direct | 1000 | 77.4 | 95.8 | 118.9 | 140.3 | 1.18x | 1.81x | 2.13 | yes |
+| edit_toolcall_py_direct | 1000 | 78.0 | 95.8 | 113.5 | 131.6 | 1.16x | 1.69x | 2.10 | yes |
+| edit_whole_py_direct | 1000 | 77.3 | 95.4 | 104.1 | 122.5 | 1.18x | 1.58x | 1.63 | yes |
+| editcopy_file_direct | 1000 | 77.8 | 95.4 | 223.8 | 264.7 | 1.18x | 3.40x | 7.51 | yes |
+| editcopy_jsonl_direct | 1000 | 77.3 | 95.4 | 211.8 | 242.1 | 1.14x | 3.13x | 6.36 | yes |
+| editcopy_replace_direct | 1000 | 77.5 | 95.8 | 133.3 | 147.2 | 1.10x | 1.90x | 2.58 | yes |
+| gen_c_vec_direct | 737 | 79.8 | 98.7 | 83.3 | 102.7 | 1.23x | 1.29x | 1.09 | yes |
+| gen_py_logstats_direct | 1000 | 79.2 | 98.3 | 86.7 | 105.7 | 1.22x | 1.33x | 1.17 | yes |
+| gen_py_lru_direct | 1000 | 79.1 | 98.1 | 95.7 | 112.3 | 1.17x | 1.42x | 1.30 | yes |
+| reason_essay | 1000 | 79.2 | 98.6 | 86.4 | 103.9 | 1.20x | 1.31x | 1.19 | yes |
+| reason_math | 1000 | 79.4 | 98.2 | 92.4 | 111.7 | 1.21x | 1.41x | 1.27 | yes |
+| reason_puzzle | 1000 | 79.2 | 98.0 | 88.8 | 103.9 | 1.17x | 1.31x | 1.16 | yes |
+| shell_find_direct | 37 | 78.5 | 97.5 | 153.7 | 216.7 | 1.41x | 2.76x | 4.00 | yes |
+| shell_pipeline_direct | 63 | 80.6 | 101.5 | 94.8 | 110.1 | 1.16x | 1.37x | 1.35 | yes |
+| shell_script_direct | 85 | 77.3 | 95.6 | 105.8 | 120.6 | 1.14x | 1.56x | 1.79 | yes |
+
+
+Noise: the spec path chooses its draft width from timed costs, so the *token path is identical but the step count varies between runs*. On `editcopy_file_direct` the baseline gave 207-221 tok/s in three runs (140-181 steps), the final binary 238 (181 steps, 3 of 3) in an earlier build and 265 (7.5 tokens/step) in the final validation run; `edit_toolcall_py_direct`: baseline 112.6-113.1, after 130.4-131.6 (`logs/final/spec_repeat.txt`). The table is one run per cell; treat differences below about 5 % on the copy-heavy rows as noise.
+
+## nsys: kernel time per step by family (45 graph launches, 1 slot, ctx 300; `tools/nsys_prof.sh`, `tools/nsys_families.py`; CSVs in `prof/`)
+B=1:
+
+| kernel family | before us/step | calls | after us/step | calls |
+|---|---:|---:|---:|---:|
+| Q8 projections / wo / head GEMV | 4572 | 289 | 3308 | 97 |
+| NVFP4 expert GEMV | 2679 | 88 | 2831 | 88 |
+| Q8_0 expert GEMV | 877 | 8 | 555 | 8 |
+| attention (+KV write, clip, conv) | 1012 | 256 | 1029 | 256 |
+| block mixes | 919 | 288 | 600 | 192 |
+| loop control | 997 | 288 | 732 | 144 |
+| router (GEMV, top-8, grouping) | 555 | 144 | 388 | 48 |
+| tiny BF16 GEMVs (sinks, conv proj) | 240 | 64 | 0 | 0 |
+| other small (norms, copies, conv, situ, moe sum, argmax) | 718 | 309 | 635 | 261 |
+| **total** | **12569** | **1734** | **10078** | **1094** |
+
+B=16:
+
+| kernel family | before us/step | calls | after us/step | calls |
+|---|---:|---:|---:|---:|
+| Q8 projections / wo / head GEMV | 12731 | 289 | 6867 | 97 |
+| NVFP4 expert GEMV | 22406 | 88 | 23164 | 88 |
+| Q8_0 expert GEMV | 5711 | 8 | 3727 | 8 |
+| attention (+KV write, clip, conv) | 3007 | 256 | 2998 | 256 |
+| block mixes | 1085 | 288 | 819 | 192 |
+| loop control | 2942 | 288 | 2532 | 144 |
+| router (GEMV, top-8, grouping) | 1147 | 144 | 1232 | 144 |
+| tiny BF16 GEMVs (sinks, conv proj) | 871 | 64 | 0 | 0 |
+| other small (norms, copies, conv, situ, moe sum, argmax) | 1883 | 309 | 1857 | 261 |
+| **total** | **51784** | **1734** | **43197** | **1190** |
+
+
+## Why was lean B=1 slower than `forward_token`?
+From the first nsys tables (sum of kernel time, gaps between kernels are about 0): the Q8 GEMVs ran as 6 separate launches per layer, three of them (wk, wv, wrel) at 28-45 % of bandwidth (4.57 ms vs about 3.3 ms in forward_token), the Q8 expert kernel was 2x slower than the SoA one (874 vs 431 us: one dependent load per K block, only 144 blocks), mix scores + out took 919 us (fused `k_mix_fused` 578 us), loop control 3 launches, router 3 launches, tiny kernels never overlapped. I did not port the SoA `forward_token` kernels: lean mode has no SoA weights and their summation order differs, which would break bit-identity between B=1 and the verify passes. Instead the same ideas were applied to the interleaved kernels, with the per-element arithmetic kept.
+
+## What did not work (measured, reverted or left off)
+* **x staged in chunks / more occupancy for `nvfp4_exp2` (K=2304)**: no change at B=1, +3-6 % slower at B>=9. Reverted.
+* **K split of the NVFP4 expert GEMV over 2-4 warp slices with ordered re-accumulation** (`nvfp4_exp_ks`, bit-exact): 4x the warps in flight, identical time. Code kept, disabled (`KS_B = 0`).
+* **Fused gate_up -> SITU -> down kernel with a grid barrier** (`nvfp4_moe_fused`, bit-exact, B<=2): 64.8 vs 65.9 us per layer (0.5 %); needs co-resident blocks. Off by default (`MIKASA_MOEFUSE=1`).
+* **Byte-pair float2 LUT for NVFP4 decode**: shared-memory bank conflicts, +5 % slower. Reverted.
+* **L2 prefetch of the next layer's wq in a parallel graph branch** during the small-kernel phase: no gain (+0-2 %). Reverted.
+* **Ablation at B=1**: removing the NVFP4 decode, or the FMAs, from `nvfp4_exp2` changes the step time by < 1 %. So the NVFP4 kernels at B=1 are not instruction bound; they sit at about 560 GB/s (head GEMV 692 GB/s) and the cause (about 5-8 us per launch of ramp/tail, or DRAM access pattern) is not understood. Fusing launches, more warps, prefetch did not move it. At B=16 the same kernel is 2.4x above its byte floor (compute/LDS bound).
+* Fusing the router for B>2 and keeping Q8 FULL staging for BT 3-4: slower or no gain.
+* Host side: the spec loop has no measurable gap (launch 8-14 us, between-steps host 2-3 us, sync wait = GPU time), so no work was needed there. Attention at 64K context is at the FP16 KV bandwidth floor (8 layers x about 0.4 ms).
+* `ncu` is not available; wanted counters are in `ncu_wanted.sh`.
+
+## Remaining ideas, ranked by expected gain
+1. NVFP4 expert kernels for B=3..16 (22.9 of 43 ms at B=16, floor about 9.6): cut instruction count (LUT-free decode, 2 tokens per x load, NT=8 for hot experts). Maybe -3 to -6 ms at B=16, +10 % on copy-heavy spec. Exactness rules out tensor cores.
+2. Explain and remove the 560 vs 690 GB/s gap of the big GEMVs (about 190 launches x 5-8 us = 1.0-1.5 ms): ncu on `gemvb2_q8m`, `nvfp4_exp2` (stalls, DRAM page behaviour, TLB) is the next step; then possibly a persistent per-layer kernel.
+3. SWA attention (`kb_attn_part` + combine, about 0.56 ms at B=1): fewer barriers, one block per kv-head over all chunks (needs care to keep the softmax order).
+4. Remaining small-kernel fusion (conv4_kv with clip_qr, rms into the router, situ into down, fused router for B up to 4): about 0.3-0.4 ms together.
+5. Spec policy: the draft-width chooser is noisy (140 vs 181 steps for the same output); using a smoother cost model could gain 5-10 % on copy-heavy prompts.
+6. Wide verification for B>16 is still approximate-greedy (unchanged).
+
+## Reproduce
+```
+nvcc -O3 -std=c++17 -arch=sm_86 -I src -o mikasa_fast src/inkling_model.cu src/gguf.cpp
+tools/build_base.sh                          # ./mikasa_base = original kernels + instrumentation only
+tools/run_bitexact.sh ./mikasa_fast fast      # logs/bitexact/fast/md5.txt (compare with base)
+tools/run_fast_check.sh ./mikasa_fast fast    # tok/s + token files (logs/fast/fast); then: tools/run_fast_check.sh --cmp base fast
+TIMEB_DIVERSE=1 ./mikasa_fast MODEL out --lean --kv16 --nslots 1 --maxctx 8192 --time-b
+tools/nsys_prof.sh ./mikasa_fast TAG 16       # per-kernel table for one B
+```
+New flags/env: `--time-b`, `TIMEB_ONLY`, `TIMEB_DIVERSE`, `MIKASA_Q8BT` (tile table), `MIKASA_NOFUSE` (old router path), `MIKASA_MOEFUSE`, `MIKASA_Q8MFULL`.

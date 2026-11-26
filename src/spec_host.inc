@@ -187,9 +187,18 @@ struct SpecRunner {
         *h_rb = rb;
         h_prm[0] = A.temp > 0 ? 1.0f / A.temp : 1.0f;
         unsigned sd = seed; std::memcpy(&h_prm[1], &sd, 4); std::memcpy(&h_prm[2], &step, 4);
-        CHECK(cudaGraphLaunch(graph(B), s));
+        const double t0 = spec_now();
+        cudaGraphExec_t gex = graph(B);
+        const double t1 = spec_now();
+        CHECK(cudaGraphLaunch(gex, s));
+        const double t2 = spec_now();
         CHECK(cudaStreamSynchronize(s));
+        const double t3 = spec_now();
+        tm_launch += t2 - t1; tm_sync += t3 - t2; tm_pre += t1 - t0; tm_n++;
+        if (tm_last > 0) tm_host += t0 - tm_last;
+        tm_last = t3;
     }
+    double tm_launch = 0, tm_sync = 0, tm_pre = 0, tm_host = 0, tm_last = 0; long tm_n = 0;
 };
 
 // ---- wide (tensor-core prefill path) verification of B > 16 rows; rollback of either path is done eagerly before the next step
@@ -455,6 +464,7 @@ static int run_spec(Engine & g, BatchState & X, const SpecArgs & A, const std::v
                 (double) ST.accepted / std::max(1L, ST.steps - ST.nodraft_steps), ST.steps - ST.nodraft_steps, ST.steps);
     if (A.copy_min > 0) std::printf("spec: copy proposer used in %ld of %ld steps (min %d tokens)\n", ST.copy_steps, ST.steps, A.copy_min);
     if (wide_on) std::printf("spec: wide (tensor-core prefill path) verify passes: %ld of %ld\n", ST.wide_steps, ST.steps);
+    if (SR.tm_n) std::printf("spec: per step host timing (ms): launch %.3f  sync-wait %.3f  between-steps host %.3f  (steps %ld)\n", 1e3 * SR.tm_launch / SR.tm_n, 1e3 * SR.tm_sync / SR.tm_n, 1e3 * SR.tm_host / SR.tm_n, SR.tm_n);
     std::printf("spec: B histogram:");
     for (int B = 1; B <= 64; ++B) if (ST.hist_B[B]) std::printf(" %d:%ld", B, ST.hist_B[B]);
     std::printf("\n");

@@ -1,0 +1,7 @@
+decode timing (ms per step, all sequences one token each, CUDA graph, 30 reps; positions = context length)
+ context        S=1        S=4
+     300      12.56      20.37
+    1024      13.09      21.72
+    8192      13.23      22.53
+   32768      14.43      27.35
+   65000      16.12      33.78

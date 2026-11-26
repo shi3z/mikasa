@@ -3,7 +3,7 @@
 
 struct LongArgs {
     SpecArgs spec;
-    bool multi_check = false, lean = false, kv16 = true, ref_all = false, time_decode = false, time_prefill = false;
+    bool multi_check = false, lean = false, kv16 = true, ref_all = false, time_decode = false, time_prefill = false, time_b = false;
     int maxctx = 65536, nslots = 4, ring = NSWA + MB, tail = 0, cmp_ref = 0, gen = 0, pf_b = 16, prefill_slot = 0, pf_fast = 0, layer_cmp = 0; bool pf_all = false; int pf_split = 0; std::string time_depths; std::string force_file, gen_logits;
     std::string prefill_file, tail_out, argmax_out, gen_out, ring_note;
 };
@@ -310,6 +310,42 @@ static int run_long(Engine & g, const LongArgs & A, cudaStream_t s) {
         R.multi(nt, poss, slots, S, mu.data());
         std::printf("multi-sequence check: S=%d, positions %d %d %d %d\n", S, len[0], len[1], S > 2 ? len[2] : 0, S > 3 ? len[3] : 0);
         for (int sl = 0; sl < S; ++sl) compare_logits(&mu[(size_t) sl * NVOCAB], &ref[(size_t) sl * NVOCAB], 1, ("  slot " + std::to_string(sl) + " multi-step vs single-sequence step").c_str());
+    }
+    if (A.time_b) {
+        // verify cost per B (same-sequence batch graph, synthetic zero KV), ms per call: B = 1..16 at ctx 300 and 4000
+        for (int il = 0; il < NAPP; ++il)
+            for (int sl = 0; sl < 1; ++sl) {
+                const bool swa = app_is_swa(il);
+                const size_t bytes = (swa ? (size_t) X.ring : (size_t) X.maxctx) * NKV * HD * ((swa || !X.kv16) ? 4 : 2);
+                CHECK(cudaMemset(X.kvs[il].k[sl], 0, bytes)); CHECK(cudaMemset(X.kvs[il].v[sl], 0, bytes));
+            }
+        reset_state(g);
+        cudaEvent_t e0, e1;
+        CHECK(cudaEventCreate(&e0)); CHECK(cudaEventCreate(&e1));
+        for (int ctx : {300, 4000}) {
+            if (std::getenv("TIMEB_ONLY") && ctx != 300) continue;
+            std::printf("TIMEB ctx %d ms/call B=1..16:", ctx);
+            for (int B = 1; B <= MB; ++B) {
+                if (const char * only = std::getenv("TIMEB_ONLY")) { if (std::atoi(only) != B) continue; }
+                cudaGraphExec_t ex = R.capture_batch(B, 0);
+                std::vector<int> toks(B, 1234), pa(B);
+                if (std::getenv("TIMEB_DIVERSE")) for (int k = 0; k < B; ++k) toks[k] = (1234 + 7919 * k + 13 * k * k) % 150000;
+                for (int k = 0; k < B; ++k) pa[k] = ctx + k;
+                int sa[MB] = {0};
+                CHECK(cudaMemcpy(X.btok, toks.data(), B * 4, cudaMemcpyHostToDevice));
+                CHECK(cudaMemcpy(X.pos_arr, pa.data(), B * 4, cudaMemcpyHostToDevice));
+                CHECK(cudaMemcpy(X.slot_arr, sa, sizeof(sa), cudaMemcpyHostToDevice));
+                for (int i = 0; i < 5; ++i) CHECK(cudaGraphLaunch(ex, s));
+                CHECK(cudaEventRecord(e0, s));
+                for (int i = 0; i < 40; ++i) CHECK(cudaGraphLaunch(ex, s));
+                CHECK(cudaEventRecord(e1, s));
+                CHECK(cudaEventSynchronize(e1));
+                float ms = 0;
+                CHECK(cudaEventElapsedTime(&ms, e0, e1));
+                { int nu = 0; CHECK(cudaMemcpy(&nu, X.grp_nu, 4, cudaMemcpyDeviceToHost)); std::printf(" %d:%.2f(nu%d)", B, ms / 40, nu); }
+            }
+            std::printf("\n"); std::fflush(stdout);
+        }
     }
     if (A.time_decode) {
         // decode step timing: synthetic (zero) KV contents; the cost does not depend on the data, only on the positions

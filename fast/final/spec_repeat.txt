@@ -1,0 +1,12 @@
+editcopy_file_direct base generated 1000 tokens in 4.576 s = 218.30 tok/s (4.581 ms/token); steps 152, tokens/step 6.572
+editcopy_file_direct base generated 1000 tokens in 4.821 s = 207.21 tok/s (4.826 ms/token); steps 181, tokens/step 5.519
+editcopy_file_direct base generated 1000 tokens in 4.522 s = 220.90 tok/s (4.527 ms/token); steps 140, tokens/step 7.136
+editcopy_file_direct fast generated 1000 tokens in 4.195 s = 238.15 tok/s (4.199 ms/token); steps 181, tokens/step 5.519
+editcopy_file_direct fast generated 1000 tokens in 4.195 s = 238.13 tok/s (4.199 ms/token); steps 181, tokens/step 5.519
+editcopy_file_direct fast generated 1000 tokens in 4.197 s = 238.01 tok/s (4.201 ms/token); steps 181, tokens/step 5.519
+edit_toolcall_py_direct base generated 1000 tokens in 8.871 s = 112.61 tok/s (8.880 ms/token); steps 510, tokens/step 1.959
+edit_toolcall_py_direct base generated 1000 tokens in 8.862 s = 112.73 tok/s (8.871 ms/token); steps 509, tokens/step 1.963
+edit_toolcall_py_direct base generated 1000 tokens in 8.833 s = 113.10 tok/s (8.842 ms/token); steps 508, tokens/step 1.967
+edit_toolcall_py_direct fast generated 1000 tokens in 7.622 s = 131.07 tok/s (7.630 ms/token); steps 476, tokens/step 2.099
+edit_toolcall_py_direct fast generated 1000 tokens in 7.664 s = 130.35 tok/s (7.672 ms/token); steps 479, tokens/step 2.086
+edit_toolcall_py_direct fast generated 1000 tokens in 7.660 s = 130.42 tok/s (7.667 ms/token); steps 479, tokens/step 2.086

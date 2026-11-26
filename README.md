@@ -14,13 +14,13 @@ Decode numbers use synthetic KV contents (cost depends on positions only), prefi
 
 | context | 1 sequence | 4 sequences in parallel (aggregate) | per sequence when 4 run |
 |---:|---:|---:|---:|
-| 300 | 80.1 | 198.8 | 49.7 |
-| 1K | 76.6 | 185.9 | 46.5 |
-| 8K | 75.9 | 179.2 | 44.8 |
-| 32K | 69.7 | 147.6 | 36.9 |
-| 64K | 62.3 | 119.2 | 29.8 |
+| 300 | 99.8 | 223.0 | 55.7 |
+| 1K | 95.1 | 207.4 | 51.8 |
+| 8K | 93.6 | 198.9 | 49.7 |
+| 32K | 84.4 | 161.0 | 40.3 |
+| 64K | 73.9 | 127.8 | 31.9 |
 
-(`--lean --kv16`; 1 sequence = 1000 / ms-per-step. Default single-token path at short context: 82-91 tok/s, see Status and Profile.)
+(`--lean --kv16`; 1 sequence = 1000 / ms-per-step; after the kernel work in [`fast/RESULTS_fast.md`](fast/RESULTS_fast.md): 12.3 -> 9.9 ms at B=1, outputs bit-identical. Before it: 80.1 / 76.6 / 75.9 / 69.7 / 62.3 tok/s at 300 / 1K / 8K / 32K / 64K.)
 
 **Prefill (prompt processing), tok/s**
 
@@ -32,16 +32,16 @@ Decode numbers use synthetic KV contents (cost depends on positions only), prefi
 | 32K | 265 | 2,893 | 3,269 |
 | 60K | 247 | 2,612-2,652 | 2,916 |
 
-**Speculative decoding (`--spec`, lean mode, greedy, single sequence; plain = 77-80 tok/s), tok/s**
+**Speculative decoding (`--spec 15 --spec-copy 4`, lean mode, greedy, single sequence), tok/s, 600 tokens**
 
-| workload (1000 tokens) | plain | n-gram / copy drafts, batch kernels (output identical to plain) | `--spec-wide` 32-64 row verify (approximate greedy) |
-|---|---:|---:|---:|
-| whole file with 2 small changes (copy-heavy) | 77 | 216 (2.8x) | **398 (5.2x)** |
-| JSONL edit | 77 | 210 (2.7x) | 347 (4.5x) |
-| edit as unified diff / write_file tool call | 77 | 112-118 (1.5x) | 112-121 |
-| shell command tool calls | 77-82 | 93-182 (1.2-2.3x) | similar |
-| new code generation | 79 | 83-95 (1.04-1.2x) | similar |
-| reasoning text | 79 | 86-93 (1.1-1.2x) | similar |
+| workload | plain | speculative (output identical to plain) | speedup over plain | `--spec-wide` (approximate greedy, measured before the kernel work) |
+|---|---:|---:|---:|---:|
+| whole file with 2 small changes (copy-heavy) | 95.9 | **235.2** | 2.5x | 398 |
+| edit as write_file tool call | 95.6 | 129.7 | 1.36x | 112 |
+| new code generation | 99.5 | 107.0 | 1.08x | 92 |
+| reasoning text | 99.9 | 110.1 | 1.10x | similar |
+
+Before the kernel work (same machine, older binary): plain 77-80, copy-heavy edit 199-216, tool-call edit 111, code generation 89-95. Other workloads (JSONL edit, shell calls, diffs): [`spec/RESULTS_spec.md`](spec/RESULTS_spec.md), [`fast/RESULTS_fast.md`](fast/RESULTS_fast.md).
 
 **Multi-token verification (same sequence, B tokens per pass, the basis for speculative decoding), tok/s**
 
@@ -141,6 +141,14 @@ is chosen per step from measured step costs and online acceptance estimates, so 
   outputs diverged from plain after 90-744 tokens in 13 of 22 workloads (numerics, not a rollback bug).
 * `--temp T --seed S`: rejection-sampling verification (accept a draft with probability p(d)), chi-square tested; no top-k/top-p/penalties, not combined with the wide path.
 * Not tested: more than one slot with speculation, `--kv32`, wide path beyond ~25K context. One run per cell, synthetic prompts. Full tables, sweeps and the honest list: [`spec/RESULTS_spec.md`](spec/RESULTS_spec.md); reproduce with `tools/run_spec_all.sh`.
+
+## Exact speed-up of the batched kernels (`fast/`)
+
+The lean `forward_batch` kernels were 15 % slower at B=1 than the old `forward_token` graph. Fusing the Q8 projections (wq, wgate, wk, wv, wrel and the tiny BF16 GEMVs in one launch), choosing the Q8 tile per B so that
+token groups share weight reads through L2, a K-split Q8 expert kernel (874 -> 555 us), horizontal fusion of independent mix / loop-control chains and a one-kernel router brought the lean B=1 step from 12.3 to 9.9 ms
+(now 7 % faster than `forward_token`), the verify passes B=2..16 1.12-1.22x cheaper, and launches per token from 1,738 to 1,094. Every token file and logit dump stays bit-identical to the previous commit; the oracle test and the daemon tests pass.
+Nsight Compute (`fast/ncu/`) at B=1: Q8 projections 76 % and NVFP4 expert GEMV 71-78 % of peak DRAM bandwidth (NVFP4 occupancy only 14 %); at B=16 `gemvb2_q8m<8>` drops to ~30 % (instruction / L2 bound), the next target.
+Failed attempts and the ranked list of remaining ideas are in [`fast/RESULTS_fast.md`](fast/RESULTS_fast.md).
 
 ## Resident daemon (`mikasa --serve`) and the OpenAI server
 

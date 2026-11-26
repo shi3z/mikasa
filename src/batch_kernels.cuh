@@ -32,6 +32,31 @@ __device__ __forceinline__ void block_sum_multi(float (&v)[MB], int B, float * s
     }
 }
 
+// four block sums at once (same per-value operation order as block_sum). smem: 4 x 32 floats. Result in all threads.
+__device__ __forceinline__ void block_sum4(float (&v)[4], float * smem) {
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+#pragma unroll
+    for (int q = 0; q < 4; ++q) {
+        float t = v[q];
+        for (int off = 16; off > 0; off >>= 1) t += __shfl_xor_sync(0xffffffffu, t, off);
+        if (lane == 0) smem[q * 32 + warp] = t;
+    }
+    __syncthreads();
+    const int nw = (blockDim.x + 31) >> 5;
+    if (warp == 0) {
+#pragma unroll
+        for (int q = 0; q < 4; ++q) {
+            float t = (lane < nw) ? smem[q * 32 + lane] : 0.0f;
+            for (int off = 16; off > 0; off >>= 1) t += __shfl_xor_sync(0xffffffffu, t, off);
+            if (lane == 0) smem[q * 32 + 31] = t;   // slot 31 never holds a warp partial (blockDim <= 992)
+        }
+    }
+    __syncthreads();
+#pragma unroll
+    for (int q = 0; q < 4; ++q) v[q] = smem[q * 32 + 31];
+    __syncthreads();
+}
+
 // ------------------------------------------------- small GEMVs (row per block) ----
 
 __global__ void gemvb_bf16_row9(const uint16_t * __restrict__ W, const float * __restrict__ x, int xbs, float * __restrict__ y,
@@ -73,20 +98,28 @@ __global__ void gemvb_f32_row9(const float * __restrict__ W, const float * __res
 }
 
 // loop-control down projection, B tokens: y[b][row] = W[row] . x[b]  (K = 4608, 256 threads, float4)
-__global__ void gemvb_f32_row8(const float * __restrict__ W, const float * __restrict__ x, int xbs, float * __restrict__ y,
-                               int ybs, int K, int B) {
-    __shared__ float red[MB * 8];
-    const int row = blockIdx.x, warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+__device__ __forceinline__ void f32_row8_body(const float * __restrict__ W, const float * __restrict__ x, int xbs, float * __restrict__ y,
+                               int ybs, int K, int B, int row, float * red) {
+    const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
     const float4 * w4 = reinterpret_cast<const float4 *>(W + (size_t) row * K);
     float acc[MB];
 #pragma unroll
     for (int bb = 0; bb < MB; ++bb) acc[bb] = 0.0f;
-    for (int k = warp * 32 + lane; k < K / 4; k += 256) {
-        const float4 a = __ldg(w4 + k);
+    {
+        constexpr int NIT = 5;                               // K / 4 = 1152 = 4.5 * 256: up to 5 iterations per thread
+        float4 a[NIT];
 #pragma unroll
-        for (int bb = 0; bb < MB; ++bb) if (bb < B) {
-            const float4 b = __ldg(reinterpret_cast<const float4 *>(x + (size_t) bb * xbs) + k);
-            acc[bb] += a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+        for (int it = 0; it < NIT; ++it) { const int k = warp * 32 + lane + it * 256; if (k < K / 4) a[it] = __ldg(w4 + k); }
+#pragma unroll
+        for (int it = 0; it < NIT; ++it) {
+            const int k = warp * 32 + lane + it * 256;
+            if (k < K / 4) {
+#pragma unroll
+                for (int bb = 0; bb < MB; ++bb) if (bb < B) {
+                    const float4 b = __ldg(reinterpret_cast<const float4 *>(x + (size_t) bb * xbs) + k);
+                    acc[bb] += a[it].x * b.x + a[it].y * b.y + a[it].z * b.z + a[it].w * b.w;
+                }
+            }
         }
     }
 #pragma unroll
@@ -105,11 +138,17 @@ __global__ void gemvb_f32_row8(const float * __restrict__ W, const float * __res
     }
 }
 
+__global__ void gemvb_f32_row8(const float * __restrict__ W, const float * __restrict__ x, int xbs, float * __restrict__ y,
+                               int ybs, int K, int B) {
+    __shared__ float red[MB * 8];
+    f32_row8_body(W, x, xbs, y, ybs, K, B, blockIdx.x, red);
+}
+
 // out[b][i] = (1 - tanh(F_i . r[b])) * cur[b][i] + tanh(G_i . r[b]) * msg[b][i]; weights read once for all tokens.
-__global__ void kb_ctrl_gf_warp(const float * cur, int cur_bs, const float * __restrict__ msg, int msg_bs,
+__device__ __forceinline__ void ctrl_gf_body(const float * cur, int cur_bs, const float * __restrict__ msg, int msg_bs,
                                 const float * __restrict__ G, const float * __restrict__ F, const float * __restrict__ r,
-                                float * out, int out_bs, int E, int B) {
-    const int i = (blockIdx.x * blockDim.x + threadIdx.x) >> 5, lane = threadIdx.x & 31;
+                                float * out, int out_bs, int E, int B, int i) {
+    const int lane = threadIdx.x & 31;
     if (i >= E) return;
     const float * gr = G + (size_t) i * 64;
     const float * fr = F + (size_t) i * 64;
@@ -124,6 +163,13 @@ __global__ void kb_ctrl_gf_warp(const float * cur, int cur_bs, const float * __r
         }
         if (lane == 0) out[(size_t) bb * out_bs + i] = (1.0f - tanhf(f)) * cur[(size_t) bb * cur_bs + i] + tanhf(g) * msg[(size_t) bb * msg_bs + i];
     }
+}
+
+__global__ void kb_ctrl_gf_warp(const float * cur, int cur_bs, const float * __restrict__ msg, int msg_bs,
+                                const float * __restrict__ G, const float * __restrict__ F, const float * __restrict__ r,
+                                float * out, int out_bs, int E, int B) {
+    const int i = (blockIdx.x * blockDim.x + threadIdx.x) >> 5;
+    ctrl_gf_body(cur, cur_bs, msg, msg_bs, G, F, r, out, out_bs, E, B, i);
 }
 
 // ------------------------------------------------------------- norms, copies ----
@@ -173,12 +219,10 @@ __global__ void kb_rms_rows3_9(const float * __restrict__ in, const float * __re
 }
 
 // out[b][0:n] = rms(a[b]), out[b][n:2n] = rms(m[b]). grid (2, B)
-__global__ void kb_rms2_rows9(const float * __restrict__ a, int a_bs, const float * __restrict__ m, int m_bs,
-                              float * __restrict__ out, int n, float eps) {
-    __shared__ float red[32];
-    const int bb = blockIdx.y;
-    const float * in = blockIdx.x ? m + (size_t) bb * m_bs : a + (size_t) bb * a_bs;
-    float * o = out + ((size_t) bb * 2 + blockIdx.x) * n;
+__device__ __forceinline__ void rms2_body(const float * __restrict__ a, int a_bs, const float * __restrict__ m, int m_bs,
+                              float * __restrict__ out, int n, float eps, int part, int bb, float * red) {
+    const float * in = part ? m + (size_t) bb * m_bs : a + (size_t) bb * a_bs;
+    float * o = out + ((size_t) bb * 2 + part) * n;
     float v[RMS_NV], ss = 0.0f;
 #pragma unroll
     for (int j = 0; j < RMS_NV; ++j) { const int i = threadIdx.x + 256 * j; v[j] = (i < n) ? in[i] : 0.0f; ss += v[j] * v[j]; }
@@ -189,6 +233,30 @@ __global__ void kb_rms2_rows9(const float * __restrict__ a, int a_bs, const floa
         const int i = threadIdx.x + 256 * j;
         if (i < n) o[i] = v[j] * inv;
     }
+}
+
+__global__ void kb_rms2_rows9(const float * __restrict__ a, int a_bs, const float * __restrict__ m, int m_bs,
+                              float * __restrict__ out, int n, float eps) {
+    __shared__ float red[32];
+    rms2_body(a, a_bs, m, m_bs, out, n, eps, blockIdx.x, blockIdx.y, red);
+}
+
+// ---- the three loop controls of the attention inputs (independent) in one launch per stage; job = blockIdx.z
+struct CtlJob { const float * cur; int cur_bs; const float * m; int m_bs; const float * Wd; const float * gain; const float * forget; float * out; int out_bs; };
+struct CtlJobs { CtlJob j[3]; };
+__global__ void kb_rms2_rows9_j(const CtlJobs J, float * hcat, float * dummy, int n, float eps) {
+    __shared__ float red[32];
+    const CtlJob & c = J.j[blockIdx.z];
+    rms2_body(c.cur, c.cur_bs, c.m, c.m_bs, hcat + (size_t) blockIdx.z * MB * 2 * n, n, eps, blockIdx.x, blockIdx.y, red);
+}
+__global__ void gemvb_f32_row8_j(const CtlJobs J, const float * hcat, float * r64, int K, int B) {
+    __shared__ float red[MB * 8];
+    f32_row8_body(J.j[blockIdx.z].Wd, hcat + (size_t) blockIdx.z * MB * K, K, r64 + (size_t) blockIdx.z * MB * 64, 64, K, B, blockIdx.x, red);
+}
+__global__ void kb_ctrl_gf_warp_j(const CtlJobs J, const float * r64, int E, int B) {
+    const CtlJob & c = J.j[blockIdx.z];
+    const int i = (blockIdx.x * blockDim.x + threadIdx.x) >> 5;
+    ctrl_gf_body(c.cur, c.cur_bs, c.m, c.m_bs, c.gain, c.forget, r64 + (size_t) blockIdx.z * MB * 64, c.out, c.out_bs, E, B, i);
 }
 
 // dst[b*dbs + i] = src[b*sbs + i], i < n. grid (ceil(n/256), B)
@@ -208,11 +276,9 @@ __global__ void kb_rep3(const float * __restrict__ in, float * __restrict__ out,
 // ------------------------------------------------------------------- mix ----
 
 // grid (S, B). State s of token b: head + b*head_bs + s*E (s < nhead) else tail + b*tail_bs.
-__global__ void kb_mix_scores2(const float * __restrict__ head, int head_bs, int nhead, const float * __restrict__ tail, int tail_bs,
+__device__ __forceinline__ void mix_scores_body(const float * __restrict__ head, int head_bs, int nhead, const float * __restrict__ tail, int tail_bs,
                                const float * __restrict__ q, int nq, float * __restrict__ scores, float * __restrict__ inv_out,
-                               int S, int E, float eps) {
-    __shared__ float red[4][32];
-    const int st = blockIdx.x, bb = blockIdx.y;
+                               int S, int E, float eps, int st, int bb, float (*red)[32]) {
     const float * in = st < nhead ? head + (size_t) bb * head_bs + (size_t) st * E : tail + (size_t) bb * tail_bs;
     scores += bb * SC_STRIDE;
     inv_out += bb * INV_STRIDE;
@@ -230,11 +296,11 @@ __global__ void kb_mix_scores2(const float * __restrict__ head, int head_bs, int
             if (nq > 2) d2 += v[j] * q[2 * E + i];
         }
     }
-    const float inv = rsqrtf(block_sum(ss, red[3]) / E + eps);
+    float r4[4] = {ss, d0, d1, d2};
+    block_sum4(r4, &red[0][0]);
+    const float inv = rsqrtf(r4[0] / E + eps);
     const float sc = 1.0f / sqrtf((float) E);
-    const float dd0 = block_sum(d0, red[0]);
-    const float dd1 = block_sum(d1, red[1]);
-    const float dd2 = block_sum(d2, red[2]);
+    const float dd0 = r4[1], dd1 = r4[2], dd2 = r4[3];
     if (threadIdx.x == 0) {
         scores[st] = dd0 * inv * sc;
         if (nq > 1) scores[S + st] = dd1 * inv * sc;
@@ -243,18 +309,24 @@ __global__ void kb_mix_scores2(const float * __restrict__ head, int head_bs, int
     }
 }
 
+__global__ void kb_mix_scores2(const float * __restrict__ head, int head_bs, int nhead, const float * __restrict__ tail, int tail_bs,
+                               const float * __restrict__ q, int nq, float * __restrict__ scores, float * __restrict__ inv_out,
+                               int S, int E, float eps) {
+    __shared__ float red[4][32];
+    mix_scores_body(head, head_bs, nhead, tail, tail_bs, q, nq, scores, inv_out, S, E, eps, blockIdx.x, blockIdx.y, red);
+}
+
 // grid (ceil(E/256), nq, B). rep == 3 (only with nq == 1): the result row is written to out rows 0, 1, 2.
-__global__ void kb_mix_out2(const float * __restrict__ head, int head_bs, int nhead, const float * __restrict__ tail, int tail_bs,
+__device__ __forceinline__ void mix_out_body(const float * __restrict__ head, int head_bs, int nhead, const float * __restrict__ tail, int tail_bs,
                             const float * __restrict__ scores, const float * __restrict__ inv, float * __restrict__ out, int out_bs,
-                            int rep, int S, int E) {
-    const int qi = blockIdx.y, bb = blockIdx.z;
+                            int rep, int S, int E, int qi, int bb, int ib) {
     const float * sc = scores + bb * SC_STRIDE + qi * S;
     const float * iv = inv + bb * INV_STRIDE;
     float m = sc[0];
     for (int s = 1; s < S; ++s) m = fmaxf(m, sc[s]);
     float tot = 0.0f;
     for (int s = 0; s < S; ++s) tot += expf(sc[s] - m);
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    const int i = ib * blockDim.x + threadIdx.x;
     if (i >= E) return;
     float a = 0.0f;
     for (int s = 0; s < S; ++s) {
@@ -265,6 +337,31 @@ __global__ void kb_mix_out2(const float * __restrict__ head, int head_bs, int nh
     float * o = out + (size_t) bb * out_bs;
     if (rep == 3) { o[i] = a; o[E + i] = a; o[2 * E + i] = a; }
     else o[(size_t) qi * E + i] = a;
+}
+
+__global__ void kb_mix_out2(const float * __restrict__ head, int head_bs, int nhead, const float * __restrict__ tail, int tail_bs,
+                            const float * __restrict__ scores, const float * __restrict__ inv, float * __restrict__ out, int out_bs,
+                            int rep, int S, int E) {
+    mix_out_body(head, head_bs, nhead, tail, tail_bs, scores, inv, out, out_bs, rep, S, E, blockIdx.y, blockIdx.z, blockIdx.x);
+}
+
+// up to 3 independent mixes in one launch (job = blockIdx.z; scores / inv buffers have one slab per job)
+struct MixJob { const float * head; int head_bs, nhead; const float * tail; int tail_bs; const float * q; int nq; float * out; int out_bs, rep, S; };
+struct MixJobs { MixJob j[3]; };
+__global__ void kb_mix_scores_j(const MixJobs J, float * scores_base, float * inv_base, int E, float eps) {
+    __shared__ float red[4][32];
+    const MixJob & m = J.j[blockIdx.z];
+    if ((int) blockIdx.x >= m.S) return;
+    mix_scores_body(m.head, m.head_bs, m.nhead, m.tail, m.tail_bs, m.q, m.nq, scores_base + (size_t) blockIdx.z * MB * SC_STRIDE,
+                    inv_base + (size_t) blockIdx.z * MB * INV_STRIDE, m.S, E, eps, blockIdx.x, blockIdx.y, red);
+}
+// grid (ceil(E/256), nqmax, B * njobs): blockIdx.z = job * B + bb
+__global__ void kb_mix_out_j(const MixJobs J, const float * scores_base, const float * inv_base, int E, int B) {
+    const int job = blockIdx.z / B, bb = blockIdx.z % B;
+    const MixJob & m = J.j[job];
+    if ((int) blockIdx.y >= m.nq) return;
+    mix_out_body(m.head, m.head_bs, m.nhead, m.tail, m.tail_bs, scores_base + (size_t) job * MB * SC_STRIDE, inv_base + (size_t) job * MB * INV_STRIDE,
+                 m.out, m.out_bs, m.rep, m.S, E, blockIdx.y, bb, blockIdx.x);
 }
 
 // ------------------------------------------------- convolutions (stateful) ----
@@ -319,7 +416,7 @@ __global__ void kb_conv4_kv(float * H0, float * S0, const float * __restrict__ w
 
 // post conv with residual: out[b] = add ? res[b] + conv : conv. Input rows come from H (rows 3+b). res may alias out.
 __global__ void kb_conv4_res(float * H, float * S, const float * __restrict__ w, const float * res, float * out, int C, int B, int add,
-                             int multi, const int * __restrict__ slot, float * Sx) {
+                             int multi, const int * __restrict__ slot, float * Sx, float * out2) {
     const int c = blockIdx.x * blockDim.x + threadIdx.x;
     if (c >= C) return;
     const float w0c = w[c * 4 + 0], w1c = w[c * 4 + 1], w2c = w[c * 4 + 2], w3c = w[c * 4 + 3];
@@ -330,7 +427,7 @@ __global__ void kb_conv4_res(float * H, float * S, const float * __restrict__ w,
             const float cur = H[(size_t) (3 + bb) * C + c];
             const float y = w0c * h0 + w1c * h1 + w2c * h2 + w3c * cur;
             const float v = (cur + y) * 0.44721359549995794f;
-            out[(size_t) bb * C + c] = add ? res[(size_t) bb * C + c] + v : v;
+            { const float o = add ? res[(size_t) bb * C + c] + v : v; out[(size_t) bb * C + c] = o; if (out2) out2[(size_t) bb * C + c] = o; }
             h0 = h1; h1 = h2; h2 = cur;
         }
         S[c] = h0; S[C + c] = h1; S[2 * C + c] = h2;
@@ -342,7 +439,7 @@ __global__ void kb_conv4_res(float * H, float * S, const float * __restrict__ w,
             const float cur = H[(size_t) (3 + bb) * C + c];
             const float y = w0c * h0 + w1c * h1 + w2c * h2 + w3c * cur;
             const float v = (cur + y) * 0.44721359549995794f;
-            out[(size_t) bb * C + c] = add ? res[(size_t) bb * C + c] + v : v;
+            { const float o = add ? res[(size_t) bb * C + c] + v : v; out[(size_t) bb * C + c] = o; if (out2) out2[(size_t) bb * C + c] = o; }
             Sb[c] = h1; Sb[C + c] = h2; Sb[2 * C + c] = cur;
         }
     }
@@ -514,6 +611,87 @@ __global__ void kb_group(const int * __restrict__ ids, int B, int * __restrict__
     if (e == 0) *grp_nu = total;
 }
 
+// ---- fused router (B <= 2): logits GEMV (one block per expert row) + top-8 + expert grouping in ONE launch.
+// The last block to finish (atomic ticket, modular so it never needs a reset) reads all logits (L2) and does what kb_router_top8
+// (one 128-thread half per token) and kb_group do, with the same arithmetic. Launch with 256 threads, grid NEXP.
+__device__ unsigned g_ticket[32];
+__global__ void __launch_bounds__(256)
+kb_router_fused(const float * __restrict__ W, const float * __restrict__ x, int xbs, float * __restrict__ logits_all, const float * __restrict__ bias,
+                int * __restrict__ ids_all, float * __restrict__ wts_all, float scale, int K, int B,
+                int * __restrict__ grp_e, int * __restrict__ grp_n, int * __restrict__ grp_t, int * __restrict__ grp_nu) {
+    __shared__ float red[MB * 8];
+    __shared__ float probs[2][128], sel[2][128];
+    __shared__ int chosen[2][8], sid[16], wtot[8];
+    __shared__ int is_last;
+    const int row = blockIdx.x;
+    {
+        const float * wr = W + (size_t) row * K;
+        float w[RMS_NV], acc[2] = {0.0f, 0.0f};
+#pragma unroll
+        for (int j = 0; j < RMS_NV; ++j) { const int i = threadIdx.x + 256 * j; w[j] = (i < K) ? wr[i] : 0.0f; }
+#pragma unroll
+        for (int bb = 0; bb < 2; ++bb) if (bb < B) {
+#pragma unroll
+            for (int j = 0; j < RMS_NV; ++j) { const int i = threadIdx.x + 256 * j; if (i < K) acc[bb] += w[j] * x[(size_t) bb * xbs + i]; }
+        }
+        float v[MB];
+#pragma unroll
+        for (int bb = 0; bb < MB; ++bb) v[bb] = bb < 2 ? acc[bb] : 0.0f;
+        block_sum_multi(v, B, red);
+        if (threadIdx.x == 0) for (int bb = 0; bb < B; ++bb) logits_all[(size_t) bb * 128 + row] = v[bb];
+    }
+    __threadfence();
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        const unsigned old = atomicAdd(&g_ticket[0], 1u);
+        is_last = ((old & 127u) == 127u);
+    }
+    __syncthreads();
+    if (!is_last) return;
+    __threadfence();
+    const int h = threadIdx.x >> 7, e = threadIdx.x & 127;
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5, hw = e >> 5;
+    if (h < B) {
+        const float pr = 1.0f / (1.0f + expf(-__ldcg(logits_all + h * 128 + e)));
+        probs[h][e] = pr;
+        sel[h][e] = pr + bias[e];
+    }
+    __syncthreads();
+    // top-8 by rank counting: expert j precedes e if sel[j] > sel[e] or (equal and j < e) -- the same order the sequential arg-max rounds produce
+    if (h < B) {
+        const float se = sel[h][e];
+        int rank = 0;
+#pragma unroll 8
+        for (int j = 0; j < 128; ++j) { const float sj = sel[h][j]; rank += (sj > se) || (sj == se && j < e); }
+        if (rank < 8) { chosen[h][rank] = e; ids_all[h * 8 + rank] = e; sid[h * 8 + rank] = e; }
+    }
+    __syncthreads();
+    if (h < B && e == 0) {
+        float sum = 0.0f;
+        for (int k = 0; k < 8; ++k) sum += probs[h][chosen[h][k]];
+        sum += 1e-20f;
+        for (int k = 0; k < 8; ++k) wts_all[h * 8 + k] = probs[h][chosen[h][k]] / sum * scale;
+    }
+    // grouping (as kb_group; both 128-thread halves compute it redundantly, only the first writes)
+    int n = 0;
+    for (int t = 0; t < B * 8; ++t) n += (sid[t] == e);
+    const unsigned m = __ballot_sync(0xffffffffu, n > 0);
+    if (lane == 0) wtot[warp] = __popc(m);
+    __syncthreads();
+    int base = 0, total = 0;
+    for (int w = 0; w < 4; ++w) { if (w < hw) base += wtot[h * 4 + w]; total += wtot[h * 4 + w]; }
+    if (h == 0) {
+        if (n > 0) {
+            const int u = base + __popc(m & ((1u << lane) - 1u));
+            grp_e[u] = e;
+            grp_n[u] = n;
+            int j = 0;
+            for (int t = 0; t < B * 8; ++t) if (sid[t] == e) grp_t[u * 16 + j++] = t;
+        }
+        if (e == 0) *grp_nu = total;
+    }
+}
+
 // SITU on all B*8 gate_up rows. grid (ceil(1152/256), B*8)
 __global__ void kb_situ(const float * __restrict__ gu, const float * __restrict__ gu_scale, const int * __restrict__ ids,
                         float * __restrict__ h, float beta, float lb) {
@@ -556,6 +734,55 @@ __global__ void kb_argmax(const float * __restrict__ logits_all, int n, int stri
         int bii = bi[0];
         for (int w = 1; w < (blockDim.x + 31) / 32; ++w)
             if (bv[w] > bvv || (bv[w] == bvv && bi[w] < bii)) { bvv = bv[w]; bii = bi[w]; }
+        out[blockIdx.x] = bii;
+    }
+}
+
+// Multi-block arg-max (same result as kb_argmax: largest value, lowest index on ties). grid (B, 32), block 1024; the last block of a row
+// (atomic ticket, modular) merges the 32 partials.
+__device__ float g_amv[MB * 32];
+__device__ int g_ami[MB * 32];
+__global__ void __launch_bounds__(1024)
+kb_argmax_mb(const float * __restrict__ logits_all, int n, int stride, int * __restrict__ out) {
+    __shared__ float bv[32];
+    __shared__ int bi[32];
+    __shared__ int last;
+    const float * logits = logits_all + (size_t) blockIdx.x * stride;
+    const int per = (n + gridDim.y - 1) / gridDim.y;
+    const int lo = blockIdx.y * per, hi = min(n, lo + per);
+    float v = -INFINITY;
+    int idx = 0;
+    for (int i = lo + threadIdx.x; i < hi; i += blockDim.x)
+        if (logits[i] > v) { v = logits[i]; idx = i; }
+    for (int off = 16; off > 0; off >>= 1) {
+        const float ov = __shfl_xor_sync(0xffffffffu, v, off);
+        const int oi = __shfl_xor_sync(0xffffffffu, idx, off);
+        if (ov > v || (ov == v && oi < idx)) { v = ov; idx = oi; }
+    }
+    if ((threadIdx.x & 31) == 0) { bv[threadIdx.x >> 5] = v; bi[threadIdx.x >> 5] = idx; }
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        float bvv = bv[0];
+        int bii = bi[0];
+        for (int w = 1; w < (blockDim.x + 31) / 32; ++w)
+            if (bv[w] > bvv || (bv[w] == bvv && bi[w] < bii)) { bvv = bv[w]; bii = bi[w]; }
+        g_amv[blockIdx.x * 32 + blockIdx.y] = bvv;
+        g_ami[blockIdx.x * 32 + blockIdx.y] = bii;
+        __threadfence();
+        const unsigned old = atomicAdd(&g_ticket[1 + blockIdx.x], 1u);
+        last = ((old & 31u) == 31u);
+    }
+    __syncthreads();
+    if (!last) return;
+    if (threadIdx.x == 0) {
+        __threadfence();
+        float bvv = __ldcg(&g_amv[blockIdx.x * 32]);
+        int bii = __ldcg(&g_ami[blockIdx.x * 32]);
+        for (int y = 1; y < 32; ++y) {
+            const float cv = __ldcg(&g_amv[blockIdx.x * 32 + y]);
+            const int ci = __ldcg(&g_ami[blockIdx.x * 32 + y]);
+            if (cv > bvv || (cv == bvv && ci < bii)) { bvv = cv; bii = ci; }
+        }
         out[blockIdx.x] = bii;
     }
 }

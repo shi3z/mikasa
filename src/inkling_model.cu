@@ -618,6 +618,7 @@ int main(int argc, char ** argv) {
         else if (std::strcmp(argv[i], "--multi-check") == 0) LA.multi_check = true;
         else if (std::strcmp(argv[i], "--time-decode") == 0) LA.time_decode = true;
         else if (std::strcmp(argv[i], "--time-prefill") == 0) LA.time_prefill = true;
+        else if (std::strcmp(argv[i], "--time-b") == 0) LA.time_b = true;
         else if (std::strcmp(argv[i], "--cmp-dump") == 0 && i + 3 < argc) { cmpa = argv[++i]; cmpb = argv[++i]; cmpk = std::atoi(argv[++i]); }
     }
     if (!cmpa.empty()) return run_cmp_dump(cmpa, cmpb, cmpk);
