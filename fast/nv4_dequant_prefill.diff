@@ -1,0 +1,58 @@
+--- a/src/pf_gemm.cuh
++++ b/src/pf_gemm.cuh
+@@ -51,26 +51,28 @@
+     asm("sub.f16x2 %0, %1, %2;\n" : "=r"(hi) : "r"(b), "r"(m));
+ }
+ // 8 E2M1 nibbles (word w: byte i = {lo: k i, hi: k i+8}) scaled by half2 s2 -> low-nibble regs (l01: bytes 0,1; l23: bytes 2,3) and
+-// high-nibble regs (h01, h23). Values are the doubled E2M1 table {0,1,2,3,4,6,8,12} times scale.
++// high-nibble regs (h01, h23). The LUT holds the doubled E2M1 table {0,1,2,3,4,6,8,12} times 128 (= high bytes of the FP16 values; the low
++// bytes are 0), s2 is the raw bit-built scale (see pf_sc_h2) so that value*s2 is the same exact FP16 product as value*scale before.
++// Sign: prmt in msb-replicate mode (selector nibble 8..11) turns the sign bit of a byte into 0x00/0xFF, merged by one lop3.
+ PF_DEV void pf_nv4_to_h2(uint32_t w, uint32_t s2, uint32_t & l01, uint32_t & l23, uint32_t & h01, uint32_t & h23) {
+-    const uint32_t LUT_LO = 0x42403C00u, LUT_HI = 0x4A484644u;
+-    const uint32_t slo = (w << 4) & 0x80808080u, shi = w & 0x80808080u;
+-    uint32_t t;
+-    t = __byte_perm(LUT_LO, LUT_HI, (w << 4) & 0x7070u) | __byte_perm(slo, 0u, 0x1404);
+-    asm("mul.f16x2 %0, %1, %2;\n" : "=r"(l01) : "r"(t), "r"(s2));
+-    t = __byte_perm(LUT_LO, LUT_HI, (w >> 12) & 0x7070u) | __byte_perm(slo, 0u, 0x3424);
+-    asm("mul.f16x2 %0, %1, %2;\n" : "=r"(l23) : "r"(t), "r"(s2));
+-    t = __byte_perm(LUT_LO, LUT_HI, w & 0x7070u) | __byte_perm(shi, 0u, 0x1404);
+-    asm("mul.f16x2 %0, %1, %2;\n" : "=r"(h01) : "r"(t), "r"(s2));
+-    t = __byte_perm(LUT_LO, LUT_HI, (w >> 16) & 0x7070u) | __byte_perm(shi, 0u, 0x3424);
+-    asm("mul.f16x2 %0, %1, %2;\n" : "=r"(h23) : "r"(t), "r"(s2));
+-}
+-// ue4m3 byte (value incl. the 0.5 factor) -> half2 {s, s}; exact in FP16
+-PF_DEV uint32_t pf_ue4m3_h2(uint32_t x) {
+-    const __half h = __float2half_rn(ue4m3_arith(x));
+-    const uint32_t b = __half_as_ushort(h);
+-    return b | (b << 16);
++    const uint32_t LUT_LO = 0x5E5C5800u, LUT_HI = 0x66646260u;
++    const uint32_t w4 = w << 4;
++    uint32_t t, sg;
++    t = __byte_perm(LUT_LO, LUT_HI, w4 & 0x7070u); sg = __byte_perm(w4, 0u, 0x9988);
++    asm("mul.f16x2 %0, %1, %2;\n" : "=r"(l01) : "r"(t | (sg & 0x80008000u)), "r"(s2));
++    t = __byte_perm(LUT_LO, LUT_HI, (w >> 12) & 0x7070u); sg = __byte_perm(w4, 0u, 0xBBAA);
++    asm("mul.f16x2 %0, %1, %2;\n" : "=r"(l23) : "r"(t | (sg & 0x80008000u)), "r"(s2));
++    t = __byte_perm(LUT_LO, LUT_HI, w & 0x7070u); sg = __byte_perm(w, 0u, 0x9988);
++    asm("mul.f16x2 %0, %1, %2;\n" : "=r"(h01) : "r"(t | (sg & 0x80008000u)), "r"(s2));
++    t = __byte_perm(LUT_LO, LUT_HI, (w >> 16) & 0x7070u); sg = __byte_perm(w, 0u, 0xBBAA);
++    asm("mul.f16x2 %0, %1, %2;\n" : "=r"(h23) : "r"(t | (sg & 0x80008000u)), "r"(s2));
+ }
++// ue4m3 scale byte (sub-block byte index sb of the packed scale word sw) -> half2 {raw, raw}, raw = (byte & 0x7F) << 7 reinterpreted as FP16
++// = ue4m3 value * 2^-8 (normals and subnormals alike); the factor 128 (and the 0.5 of the table) sits in the LUT above, so value*raw is
++// bit-identical to the old value*scale. Needs a finite scale (0x7F, the NaN code, is never produced by the quantiser; checked on the model).
++// sel = pf_sc_sel(sb) is hoisted by the caller.
++PF_DEV uint32_t pf_sc_sel(int sb) { return (uint32_t) sb | (4u << 4) | ((uint32_t) sb << 8) | (4u << 12); }
++PF_DEV uint32_t pf_sc_h2(uint32_t sw, uint32_t sel) { return (__byte_perm(sw, 0u, sel) << 7) & 0x3F803F80u; }
+ 
+ // swizzle of the 16-byte units of a 128-byte activation row (row n of the tile)
+ template <int FMT> PF_DEV int pf_swz(int n) { return FMT == PF_Q8 ? 2 * (n & 3) : ((n & 1) | (((n >> 1) & 1) << 2)); }
+@@ -202,7 +204,7 @@
+                     const int sb = 2 * h + (q >> 1);
+                     uint32_t s2[2];
+ #pragma unroll
+-                    for (int rh = 0; rh < 2; ++rh) s2[rh] = pf_ue4m3_h2((wcur.s[mt][rh][0] >> (8 * sb)) & 0xFF);
++                    for (int rh = 0; rh < 2; ++rh) s2[rh] = pf_sc_h2(wcur.s[mt][rh][0], pf_sc_sel(sb));
+                     uint32_t l01, l23, h01, h23, m01, m23, n01, n23;
+                     pf_nv4_to_h2(wcur.w[mt][0][h], s2[0], l01, l23, h01, h23);   // row r
+                     pf_nv4_to_h2(wcur.w[mt][1][h], s2[1], m01, m23, n01, n23);   // row r+8

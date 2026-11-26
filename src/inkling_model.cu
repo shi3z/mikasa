@@ -555,7 +555,7 @@ int main(int argc, char ** argv) {
     LongArgs LA;
     bool long_mode = false, serve = false;
     for (int i = 3; i < argc; ++i) if (std::strcmp(argv[i], "--serve") == 0) {   // daemon defaults (overridable by the flags below)
-        serve = true; g_lean = true; long_mode = true; LA.kv16 = true; LA.maxctx = 65536; LA.nslots = 4; LA.pf_fast = 512; LA.spec.k = 15; LA.spec.copy_min = 4; LA.spec.m = 1;
+        serve = true; g_lean = true; long_mode = true; LA.kv16 = true; LA.maxctx = 65536; LA.nslots = 4; LA.pf_fast = 1024; LA.spec.k = 15; LA.spec.copy_min = 4; LA.spec.m = 1;
     }
     std::string cmpa, cmpb; int cmpk = 0;
     for (int i = 3; i < argc; ++i) {

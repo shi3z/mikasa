@@ -22,7 +22,7 @@ Decode numbers use synthetic KV contents (cost depends on positions only), prefi
 
 (`--lean --kv16`; 1 sequence = 1000 / ms-per-step; after the kernel work in [`fast/RESULTS_fast.md`](fast/RESULTS_fast.md): 12.3 -> 9.9 ms at B=1, outputs bit-identical. Before it: 80.1 / 76.6 / 75.9 / 69.7 / 62.3 tok/s at 300 / 1K / 8K / 32K / 64K.)
 
-**Prefill (prompt processing), tok/s**
+**Prefill (prompt processing), tok/s** (the daemon defaults to chunk 1024: +0.7 GB VRAM for 1 slot, +1.1 GB for 4 slots; re-measured with the fast kernels in [`fast/RESULTS_fast.md`](fast/RESULTS_fast.md))
 
 | prompt tokens | old 16-token GEMV path | `--pf-fast 512` | `--pf-fast 1024` |
 |---:|---:|---:|---:|
@@ -195,7 +195,7 @@ Failed attempts and the ranked list of remaining ideas are in [`fast/RESULTS_fas
 
 ## Resident daemon (`mikasa --serve`) and the OpenAI server
 
-`mikasa --serve` (built from the same sources; defaults `--lean --kv16 --nslots 4 --maxctx 65536 --pf-fast 512 --spec 15 --spec-copy 4`, `--spec-wide` off) loads the model once and serves JSON-line requests on a unix socket.
+`mikasa --serve` (built from the same sources; defaults `--lean --kv16 --nslots 4 --maxctx 65536 --pf-fast 1024 --pf-chunk 1024 --spec 15 --spec-copy 4`, `--spec-wide` off) loads the model once and serves JSON-line requests on a unix socket.
 `server/mikasa_server.py --engine daemon --launch-daemon --model GGUF` exposes it as an OpenAI-compatible endpoint (streaming, tool calls, reasoning split, `/props` with `n_ctx` and slots); the web console preset `mikasa` uses port 8767 like the llama-server preset.
 Design, protocol, flags, numbers and the list of limits: [`DAEMON.md`](DAEMON.md); reproduce with `tools/run_daemon_tests.sh`.
 

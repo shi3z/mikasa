@@ -332,7 +332,26 @@ struct Q8JobsBuilder {
 // tokens, NT tokens at a time: the activation vectors of the NT tokens sit in shared memory (broadcast reads), every
 // weight chunk is dequantised once and applied to all NT tokens. Token slot t reads x + (t >> x_shift) * x_stride and
 // writes y[t][N]. Requires N % 128 == 0. The first weight block is issued before the activation staging.
-template <int K, int NT>
+// NVFP4 doubled-E2M1 decode without shared memory: 4 bytes -> 4 low-nibble and 4 high-nibble floats (exact; same values as kE2M1d).
+__device__ __forceinline__ void nv4_dec_word(uint32_t w, float (&lo)[4], float (&hi)[4]) {
+    const uint32_t LUT_LO = 0x42403C00u, LUT_HI = 0x4A484644u, w4 = w << 4;
+    const uint32_t t0 = __byte_perm(LUT_LO, LUT_HI, w4 & 0x7070u) | (__byte_perm(w4, 0u, 0x9988) & 0x80008000u);
+    const uint32_t t1 = __byte_perm(LUT_LO, LUT_HI, (w >> 12) & 0x7070u) | (__byte_perm(w4, 0u, 0xBBAA) & 0x80008000u);
+    const uint32_t t2 = __byte_perm(LUT_LO, LUT_HI, w & 0x7070u) | (__byte_perm(w, 0u, 0x9988) & 0x80008000u);
+    const uint32_t t3 = __byte_perm(LUT_LO, LUT_HI, (w >> 16) & 0x7070u) | (__byte_perm(w, 0u, 0xBBAA) & 0x80008000u);
+    float2 f;
+    f = __half22float2(*reinterpret_cast<const __half2 *>(&t0)); lo[0] = f.x; lo[1] = f.y;
+    f = __half22float2(*reinterpret_cast<const __half2 *>(&t1)); lo[2] = f.x; lo[3] = f.y;
+    f = __half22float2(*reinterpret_cast<const __half2 *>(&t2)); hi[0] = f.x; hi[1] = f.y;
+    f = __half22float2(*reinterpret_cast<const __half2 *>(&t3)); hi[2] = f.x; hi[3] = f.y;
+}
+
+// R = weight rows per thread (R groups of 32 rows per warp): every x vector read from shared memory (8 LDS.128 per token and 32-k half) is
+// applied to R rows, so the LDS / address work per FMA drops by R. Each row keeps its own accumulation order: bit-identical for every R.
+#ifndef NVDEC
+#define NVDEC 1
+#endif
+template <int K, int NT, int R>
 __global__ void __launch_bounds__(128)
 nvfp4_exp2(const uint8_t * __restrict__ qs_all, const uint8_t * __restrict__ sc_all, const float * __restrict__ x,
            int64_t x_stride, int x_shift, float * __restrict__ y, int N, const int * __restrict__ grp_e,
@@ -346,15 +365,17 @@ nvfp4_exp2(const uint8_t * __restrict__ qs_all, const uint8_t * __restrict__ sc_
     const int n = grp_n[ue];
     const int * toks = grp_t + ue * 16;
     const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
-    const int row = (blockIdx.x * 4 + warp) * 32 + lane;
-    const size_t grp = (size_t) e * (N / 32) + blockIdx.x * 4 + warp;      // interleaved layout: [e][N/32][NB][2][32] uint4
+    const int g0 = (blockIdx.x * 4 + warp) * R;                            // first 32-row group of this warp
+    const size_t grp = (size_t) e * (N / 32) + g0;                         // interleaved layout: [e][N/32][NB][2][32] uint4
     const uint4 * q = reinterpret_cast<const uint4 *>(qs_all) + grp * NB * 64 + lane;
     const uint32_t * sp = reinterpret_cast<const uint32_t *>(sc_all) + grp * NB * 32 + lane;
+    constexpr size_t QSTR = (size_t) NB * 64, SSTR = (size_t) NB * 32;      // per group (in uint4 / uint32)
     if (threadIdx.x < 16) kt[threadIdx.x] = kE2M1d[threadIdx.x];
     for (int tc = 0; tc < n; tc += NT) {
         const int nt = min(NT, n - tc);
-        uint4 c0 = __ldg(q), c1 = __ldg(q + 32);
-        uint32_t cs = __ldg(sp);
+        uint4 c0[R], c1[R]; uint32_t cs[R];
+#pragma unroll
+        for (int r = 0; r < R; ++r) { c0[r] = __ldg(q + r * QSTR); c1[r] = __ldg(q + r * QSTR + 32); cs[r] = __ldg(sp + r * SSTR); }
         if (tc) __syncthreads();
         for (int i = threadIdx.x; i < (K / 4) * nt; i += 128) {
             const int tk = i / (K / 4), k4 = i - tk * (K / 4);
@@ -363,29 +384,49 @@ nvfp4_exp2(const uint8_t * __restrict__ qs_all, const uint8_t * __restrict__ sc_
                 reinterpret_cast<const float4 *>(x + (int64_t) (t >> x_shift) * x_stride)[k4];
         }
         __syncthreads();
-        float acc[NT];
+        float acc[R][NT];
 #pragma unroll
-        for (int k = 0; k < NT; ++k) acc[k] = 0.0f;
+        for (int r = 0; r < R; ++r)
+#pragma unroll
+            for (int k = 0; k < NT; ++k) acc[r][k] = 0.0f;
         for (int b = 0; b < NB; ++b) {
-            uint4 n0 = c0, n1 = c1;
-            uint32_t ns = cs;
-            if (b + 1 < NB) { n0 = __ldg(q + (b + 1) * 64); n1 = __ldg(q + (b + 1) * 64 + 32); ns = __ldg(sp + (b + 1) * 32); }
+            uint4 n0[R], n1[R]; uint32_t ns[R];
+#pragma unroll
+            for (int r = 0; r < R; ++r) {
+                n0[r] = c0[r]; n1[r] = c1[r]; ns[r] = cs[r];
+                if (b + 1 < NB) { n0[r] = __ldg(q + r * QSTR + (b + 1) * 64); n1[r] = __ldg(q + r * QSTR + (b + 1) * 64 + 32); ns[r] = __ldg(sp + r * SSTR + (b + 1) * 32); }
+            }
 #pragma unroll
             for (int half = 0; half < 2; ++half) {
-                const uint4 a = half ? c1 : c0;
-                const uint32_t w[4] = {a.x, a.y, a.z, a.w};
-                float wl[2][8], wh[2][8];
+                float wl[R][2][8], wh[R][2][8], d0[R], d1[R];
 #pragma unroll
-                for (int h = 0; h < 2; ++h)
+                for (int r = 0; r < R; ++r) {
+                    const uint4 a = half ? c1[r] : c0[r];
+                    const uint32_t w[4] = {a.x, a.y, a.z, a.w};
+#if NVDEC
 #pragma unroll
-                    for (int j = 0; j < 8; ++j) {
-                        const int bi = h * 8 + j;
-                        const uint32_t byte = (w[bi >> 2] >> (8 * (bi & 3))) & 0xFF;
-                        wl[h][j] = kt[byte & 15];
-                        wh[h][j] = kt[byte >> 4];
-                    }
-                const float d0 = ue4m3_arith((cs >> (8 * (2 * half + 0))) & 0xFF);
-                const float d1 = ue4m3_arith((cs >> (8 * (2 * half + 1))) & 0xFF);
+                    for (int h = 0; h < 2; ++h)
+#pragma unroll
+                        for (int jj = 0; jj < 2; ++jj) {
+                            float lo4[4], hi4[4];
+                            nv4_dec_word(w[2 * h + jj], lo4, hi4);
+#pragma unroll
+                            for (int i = 0; i < 4; ++i) { wl[r][h][4 * jj + i] = lo4[i]; wh[r][h][4 * jj + i] = hi4[i]; }
+                        }
+#else
+#pragma unroll
+                    for (int h = 0; h < 2; ++h)
+#pragma unroll
+                        for (int j = 0; j < 8; ++j) {
+                            const int bi = h * 8 + j;
+                            const uint32_t byte = (w[bi >> 2] >> (8 * (bi & 3))) & 0xFF;
+                            wl[r][h][j] = kt[byte & 15];
+                            wh[r][h][j] = kt[byte >> 4];
+                        }
+#endif
+                    d0[r] = ue4m3_arith((cs[r] >> (8 * (2 * half + 0))) & 0xFF);
+                    d1[r] = ue4m3_arith((cs[r] >> (8 * (2 * half + 1))) & 0xFF);
+                }
 #pragma unroll
                 for (int tk = 0; tk < NT; ++tk) {
                     if (tk < nt) {
@@ -394,22 +435,28 @@ nvfp4_exp2(const uint8_t * __restrict__ qs_all, const uint8_t * __restrict__ sc_
 #pragma unroll
                         for (int i = 0; i < 8; ++i) xv[i] = xb[i];
                         const float * xf = reinterpret_cast<const float *>(xv);
-                        float tot = 0.0f;
 #pragma unroll
-                        for (int h = 0; h < 2; ++h) {
-                            float sub = 0.0f;
+                        for (int r = 0; r < R; ++r) {
+                            float tot = 0.0f;
 #pragma unroll
-                            for (int j = 0; j < 8; ++j) sub += wl[h][j] * xf[h * 16 + j] + wh[h][j] * xf[h * 16 + j + 8];
-                            tot += (h ? d1 : d0) * sub;
+                            for (int h = 0; h < 2; ++h) {
+                                float sub = 0.0f;
+#pragma unroll
+                                for (int j = 0; j < 8; ++j) sub += wl[r][h][j] * xf[h * 16 + j] + wh[r][h][j] * xf[h * 16 + j + 8];
+                                tot += (h ? d1[r] : d0[r]) * sub;
+                            }
+                            acc[r][tk] += tot;
                         }
-                        acc[tk] += tot;
                     }
                 }
             }
-            c0 = n0; c1 = n1; cs = ns;
+#pragma unroll
+            for (int r = 0; r < R; ++r) { c0[r] = n0[r]; c1[r] = n1[r]; cs[r] = ns[r]; }
         }
 #pragma unroll
-        for (int tk = 0; tk < NT; ++tk) if (tk < nt) y[(size_t) toks[tc + tk] * N + row] = acc[tk];
+        for (int r = 0; r < R; ++r)
+#pragma unroll
+            for (int tk = 0; tk < NT; ++tk) if (tk < nt) y[(size_t) toks[tc + tk] * N + (g0 + r) * 32 + lane] = acc[r][tk];
     }
 }
 
@@ -679,8 +726,14 @@ template <int K, int NT>
 static void launch_nvfp4_nt(const uint8_t * qs_all, const uint8_t * sc_all, const float * x, int64_t x_stride, int x_shift, float * y,
                             int N, int B, const int * ge, const int * gn, const int * gt, const int * gnu, cudaStream_t s) {
     const size_t smem = (size_t) NT * K * sizeof(float);
-    dim3 grid(N / 128, std::min(128, 8 * B));
-    nvfp4_exp2<K, NT><<<grid, 128, smem, s>>>(tmap(qs_all), tmap(sc_all), x, x_stride, x_shift, y, N, ge, gn, gt, gnu);
+    static const int rsel = std::getenv("MIKASA_NVR") ? std::atoi(std::getenv("MIKASA_NVR")) : 1;   // rows per thread for B >= 3 (1 = old kernel)
+    if (NT >= 4 && rsel == 2 && N % 256 == 0) {
+        dim3 grid(N / 256, std::min(128, 8 * B));
+        nvfp4_exp2<K, NT, 2><<<grid, 128, smem, s>>>(tmap(qs_all), tmap(sc_all), x, x_stride, x_shift, y, N, ge, gn, gt, gnu);
+    } else {
+        dim3 grid(N / 128, std::min(128, 8 * B));
+        nvfp4_exp2<K, NT, 1><<<grid, 128, smem, s>>>(tmap(qs_all), tmap(sc_all), x, x_stride, x_shift, y, N, ge, gn, gt, gnu);
+    }
 }
 
 constexpr int KS_B = 0, KS_GU = 4, KS_DN = 2;   // nvfp4_exp_ks used for B <= KS_B (K=2304 / 1152 slices)

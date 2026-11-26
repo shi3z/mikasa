@@ -7,7 +7,7 @@
 //      - "snapshot": a snapshot (conv states + the last 1040 rows of every SWA ring + position) taken at a chunk boundary (multiple of 512) of an earlier
 //        prompt is restored; the full-attention KV is linear, rows below the position are still in the slot, rows above are overwritten,
 //      - else prefill from scratch on the least recently used idle slot.
-//  * Scheduling: one prefill chunk (<= 512 tokens, ends at multiples of 256) of one request, then one decode step of all generating requests, repeat.
+//  * Scheduling: one prefill chunk (<= 1024 tokens when nobody else is generating, <= 256 otherwise; ends at multiples of 256) of one request, then one decode step of all generating requests, repeat.
 //    1 generating request: speculative step (n-gram / copy drafts, forward_batch rows of ONE sequence); >= 2: forward_batch multi mode, one token each.
 #include <thread>
 #include <mutex>
@@ -28,7 +28,7 @@ struct DArgs {
     int tcp = 0;                 // >0: also listen on 127.0.0.1:tcp
     int snaps = 40;              // max snapshots (each ~174 MB)
     bool snap_end = false;       // also snapshot the exact end of every prompt (unaligned; default: only the last multiple of 512)
-    int chunk = 512;             // prefill chunk when nobody else is generating (256 otherwise)
+    int chunk = 1024;            // prefill chunk when nobody else is generating (256 otherwise); needs PF.PB >= chunk (daemon default --pf-fast 1024)
     int quiet = 0;
 };
 static DArgs g_dargs;
