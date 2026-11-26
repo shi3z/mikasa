@@ -62,6 +62,49 @@ Before the kernel work (same machine, older binary): plain 77-80, copy-heavy edi
 Measured with `--gen 128 --reps 5` (RTX 3090, CUDA Graph replay).
 The 128-token greedy output matches the reference exactly. Logits differ from the reference by at most 7.6e-6, and the argmax matches at every position.
 
+## Harness engine on RTX 3090: chunked prefill and long-context benchmark (2026-11-26)
+
+Batched (chunked) prefill: 128 prompt tokens per pass, with expert weights read once per chunk
+(NVFP4 and Q8_0 experts as union kernels over token/slot pairs, int8 limbs with dp4a for the Q8 experts),
+IMMA GEMMs for the projections, fp16 KV cache, and a tensor-core (fp16 `mma.sync`) chunk attention with
+32-token query tiles and key splits. RTX 3090, CUDA Graph per chunk length.
+
+Prefill (ms/token, PCH = 128). Sequential is the earlier one-token-per-pass path, on the same binary family.
+
+| context | sequential | chunked | 
+|---:|---:|---:|
+| 1K | 9.19 | 1.72 |
+| 16K | — | 1.57 |
+| 32K | — | 1.61 |
+| 48K | 13.71 (658 s) | **1.66** (1.71 in the app benchmark) |
+| 64K (65,535 tokens) | — | **1.70** |
+
+Long-context application-development benchmark (`bench_longctx.py`, harness side): a slice of the project's
+own source is primed once as the system prompt and kept as a snapshot. Questions ask for a constant's value or the
+file that defines a CUDA kernel; each answer appears in the slice, so ground truth is taken from the text itself.
+Question counts differ by length because they are drawn from facts inside each slice.
+
+| context | prime | prime ms/token | correct | decode |
+|---:|---:|---:|---:|---:|
+| 8K (8,015) | 13.0 s | 1.62 | 5/5 | 88.8 tok/s |
+| 16K (16,015) | 26.1 s | 1.63 | 8/8 | 77.4 tok/s |
+| 32K (32,015) | 53.6 s | 1.67 | 9/10 | 65.9 tok/s |
+| 48K (48,015) | 82.0 s | 1.71 | 10/10 | 57.7 tok/s |
+| 64K (64,015) | 112.2 s | 1.75 | 10/10 | 51.3 tok/s |
+
+Sequential at 48K on the same benchmark: 658 s prime, 9/10 correct (one wrong value), 57.8 tok/s decode.
+
+Caveats:
+- The chunked path does not reproduce the sequential logits exactly. Across processes, last-token logits differ by
+  about 1e-2 at 1K tokens and 5e-2 at 2K (max). This comes from different rounding in the two paths (int8 vs
+  dp4a activation quantization, fp16 KV and attention) that flips near-tied MoE routing decisions. Generated tokens
+  matched the sequential run for 128 tokens at 1K and 1.5K; at 2K they diverge at the first decode step (near-tie).
+- The fp16 KV cache alone moves 2K-token logits by up to 0.31 (mean 0.054) against fp32 KV.
+- The numbers above come from the engine version in the inkling-harness working tree, which is newer than the
+  `src/` in this repository. The sources in `src/` here are not updated by this section.
+- Each figure comes from single runs on one RTX 3090; the 48K and 64K prefill times are a single pass each.
+- These numbers are for the inkling-harness engine (a different code line from `--pf-fast` above, and a different GPU). They are not directly comparable to the A6000 prefill figures in this README.
+
 ## Profile (RTX A6000, Nsight Systems, 2026-11-25)
 
 `nsys profile --cuda-graph-trace=node --trace=cuda ./mikasa Inkling-2-Mini-UD-Q4_K_XL.gguf out --gen 64 --reps 2`, GPU otherwise idle.
