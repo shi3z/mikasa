@@ -289,5 +289,7 @@ __global__ void pf_kv_write(const float * __restrict__ Kconv, const float * __re
     for (int off = 16; off > 0; off >>= 1) ss += __shfl_xor_sync(0xffffffffu, ss, off);
     const float f = isk ? fminf(1.0f, thr / (sqrtf(ss) + 1e-6f)) : rsqrtf(ss / 128.0f + eps);
     KT * dst = (KT *) (isk ? kv.k[sl] : kv.v[sl]) + row * 1024 + h * 128 + lane * 4;
-    kv_store(dst + 0, v.x * f); kv_store(dst + 1, v.y * f); kv_store(dst + 2, v.z * f); kv_store(dst + 3, v.w * f);
+    float w0 = v.x * f, w1 = v.y * f, w2 = v.z * f, w3 = v.w * f;
+    if (sizeof(KT) == 2 && (d_kv8sim & (isk ? 1 : 2))) { w0 = kv_r8(w0); w1 = kv_r8(w1); w2 = kv_r8(w2); w3 = kv_r8(w3); }
+    kv_store(dst + 0, w0); kv_store(dst + 1, w1); kv_store(dst + 2, w2); kv_store(dst + 3, w3);
 }

@@ -24,6 +24,7 @@ struct BatchState {
     KVSlots kvs[NAPP];
     int ring = NSWA + MB, maxctx = MAXT, nslots = 4;   // SWA ring rows, positions of a full-attention cache, slots
     bool kv16 = false;                                // full-attention KV in FP16
+    bool kv8 = false;                                 // ... or FP8 E4M3 (implies kv16)
     bool swa_split = true;                            // SWA attention as split-KV (else kb_attn2_ring)
     bool ref = false;                                 // use the naive reference attention (kb_attn_ref) instead of the optimised ones
     float *Opart = nullptr, *MLpart = nullptr, *Sref = nullptr;   // split-KV partials, reference scores
@@ -35,6 +36,7 @@ struct BatchState {
 // KV configuration. Default (= old behaviour): slot 0 aliases the engine's KV (forward_token interoperates), FP32, 1024 positions.
 struct KVOpts {
     bool kv16 = false;        // full-attention KV in FP16 (SWA rings are always FP32)
+    bool kv8 = false;         // full-attention KV in FP8 E4M3 (implies kv16)
     int maxctx = MAXT;        // positions per slot of the full-attention caches (<= ATT_MAXCTX)
     int nslots = 4;           // sequence slots with a KV cache (1..4)
     bool alias0 = true;       // slot 0 = Engine::kcache/vcache (needs the non-lean engine; requires FP32 and maxctx <= MAXT)
@@ -44,7 +46,7 @@ struct KVOpts {
 
 static void init_batch(Engine & g, BatchState & X, const KVOpts & ko = KVOpts()) {
     if (std::getenv("MIKASA_SWA_OLD")) X.swa_split = false;
-    X.kv16 = ko.kv16; X.maxctx = ko.maxctx; X.nslots = ko.nslots; X.ring = ko.ring;
+    X.kv16 = ko.kv16; X.kv8 = ko.kv8 && ko.kv16; X.maxctx = ko.maxctx; X.nslots = ko.nslots; X.ring = ko.ring;
     if (ko.maxctx > ATT_MAXCTX || ko.ring < NSWA + MB - 1) { std::fprintf(stderr, "bad KV options\n"); std::exit(1); }
     if (ko.alias0 && (g_lean || ko.kv16 || ko.maxctx > MAXT)) { std::fprintf(stderr, "alias0 needs the non-lean engine, FP32 KV, maxctx <= %d\n", MAXT); std::exit(1); }
     if (!g_lean)
@@ -82,7 +84,7 @@ static void init_batch(Engine & g, BatchState & X, const KVOpts & ko = KVOpts())
         {
             const bool swa = app_is_swa(il);
             const size_t rows = swa ? (size_t) ko.ring : (size_t) ko.maxctx;
-            const size_t esz = (swa || !ko.kv16) ? 4 : 2;
+            const size_t esz = (swa || !ko.kv16) ? 4 : (X.kv8 ? 1 : 2);
             for (int sl = 0; sl < 4; ++sl) {
                 X.kvs[il].k[sl] = X.kvs[il].v[sl] = nullptr;
                 if (sl >= ko.nslots) continue;
@@ -216,7 +218,10 @@ static void forward_batch(Engine & g, BatchState & X, int B, int multi, cudaStre
         if (swa || !X.kv16)
             kb_kv_write<float><<<dim3(2 * NKV, B), 256, 0, s>>>(X.Kconv, X.Vconv, QK_CLIP, X.pos_arr, X.slot_arr, X.kvs[il], swa ? X.ring : 0, NKV, HD, RMS_EPS, swa ? 0 : g_kv_rmask);
         else
-            kb_kv_write<__half><<<dim3(2 * NKV, B), 256, 0, s>>>(X.Kconv, X.Vconv, QK_CLIP, X.pos_arr, X.slot_arr, X.kvs[il], 0, NKV, HD, RMS_EPS);
+        {
+            if (X.kv8) kb_kv_write<fp8e4><<<dim3(2 * NKV, B), 256, 0, s>>>(X.Kconv, X.Vconv, QK_CLIP, X.pos_arr, X.slot_arr, X.kvs[il], 0, NKV, HD, RMS_EPS);
+            else       kb_kv_write<__half><<<dim3(2 * NKV, B), 256, 0, s>>>(X.Kconv, X.Vconv, QK_CLIP, X.pos_arr, X.slot_arr, X.kvs[il], 0, NKV, HD, RMS_EPS);
+        }
         if (!swa) {
             kb_scale_tau<<<dim3((NH * HD + 255) / 256, B), 256, 0, s>>>(X.Qc, NH * HD, X.pos_arr);
             kb_scale_tau<<<dim3(2, B), 256, 0, s>>>(X.Rc, NH * NREL, X.pos_arr);
@@ -227,6 +232,9 @@ static void forward_batch(Engine & g, BatchState & X, int B, int multi, cudaStre
             if (swa || !X.kv16)
                 kb_attn_ref<float><<<dim3(NH, B), 256, 0, s>>>(X.Qc, X.kvs[il], swa ? X.ring : 0, X.Rc, P.rel_bias, X.sinks, X.pos_arr, X.slot_arr,
                                                                 swa ? NSWA : 0, X.Sref, X.maxctx, X.O, X.G, X.gated);
+            else if (X.kv8)
+                kb_attn_ref<fp8e4><<<dim3(NH, B), 256, 0, s>>>(X.Qc, X.kvs[il], 0, X.Rc, P.rel_bias, X.sinks, X.pos_arr, X.slot_arr,
+                                                               0, X.Sref, X.maxctx, X.O, X.G, X.gated);
             else
                 kb_attn_ref<__half><<<dim3(NH, B), 256, 0, s>>>(X.Qc, X.kvs[il], 0, X.Rc, P.rel_bias, X.sinks, X.pos_arr, X.slot_arr,
                                                                  0, X.Sref, X.maxctx, X.O, X.G, X.gated);
@@ -236,6 +244,7 @@ static void forward_batch(Engine & g, BatchState & X, int B, int multi, cudaStre
             // split-KV: SWA = window of NSWA positions in chunks of SWA_CH (ring storage), full = all positions in chunks of ATT_CH
             const int ch = swa ? SWA_CH : ATT_CH, nchg = swa ? (NSWA + SWA_CH - 1) / SWA_CH : (X.maxctx + ATT_CH - 1) / ATT_CH;
             if (swa || !X.kv16) kb_attn_part<float><<<dim3(B, nchg, NKV), 512, 0, s>>>(X.Qc, X.kvs[il], X.Rc, P.rel_bias, X.sinks, X.pos_arr, X.slot_arr, swa ? NSWA : 0, swa ? X.ring : 0, ch, X.Opart, X.MLpart);
+            else if (X.kv8)     kb_attn_part<fp8e4><<<dim3(B, nchg, NKV), 512, 0, s>>>(X.Qc, X.kvs[il], X.Rc, P.rel_bias, X.sinks, X.pos_arr, X.slot_arr, 0, 0, ch, X.Opart, X.MLpart);
             else                kb_attn_part<__half><<<dim3(B, nchg, NKV), 512, 0, s>>>(X.Qc, X.kvs[il], X.Rc, P.rel_bias, X.sinks, X.pos_arr, X.slot_arr, 0, 0, ch, X.Opart, X.MLpart);
             kb_attn_combine<<<dim3(NH, B), 128, 0, s>>>(X.Opart, X.MLpart, X.pos_arr, swa ? NSWA : 0, ch, X.G, X.O, X.gated);
         }

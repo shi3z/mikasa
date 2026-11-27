@@ -3,7 +3,7 @@
 
 struct LongArgs {
     SpecArgs spec;
-    bool multi_check = false, lean = false, kv16 = true, ref_all = false, time_decode = false, time_prefill = false, time_b = false;
+    bool multi_check = false, lean = false, kv16 = true, kv8 = false, ref_all = false, time_decode = false, time_prefill = false, time_b = false;
     int maxctx = 65536, nslots = 4, ring = NSWA + MB, tail = 0, cmp_ref = 0, gen = 0, pf_b = 16, prefill_slot = 0, pf_fast = 0, layer_cmp = 0; bool pf_all = false; int pf_split = 0; std::string time_depths; std::string force_file, gen_logits;
     std::string prefill_file, tail_out, argmax_out, gen_out, ring_note;
 };
@@ -115,7 +115,7 @@ static int run_long(Engine & g, const LongArgs & A, cudaStream_t s) {
     print_mem("weights loaded");
     BatchState X;
     KVOpts ko;
-    ko.kv16 = A.kv16; ko.maxctx = A.maxctx; ko.nslots = A.nslots; ko.ring = A.ring; ko.alias0 = !A.lean;
+    ko.kv16 = A.kv16; ko.kv8 = A.kv8; ko.maxctx = A.maxctx; ko.nslots = A.nslots; ko.ring = A.ring; ko.alias0 = !A.lean;
     ko.ref = A.ref_all || A.cmp_ref > 0;
     if (A.pf_fast) ko.ring = std::max(ko.ring, NSWA + A.pf_fast);
     if (!A.lean) { ko.alias0 = false; }   // long runs never share the engine KV
@@ -125,7 +125,7 @@ static int run_long(Engine & g, const LongArgs & A, cudaStream_t s) {
     Runner R(g, X, s);
     PFState PF;
     if (A.pf_fast) { init_pf(PF, A.pf_fast); print_mem("after init_pf"); }
-    std::printf("config: lean=%d kv=%s maxctx=%d nslots=%d ring=%d ref_all=%d\n", (int) A.lean, A.kv16 ? "fp16(full layers)" : "fp32", A.maxctx, A.nslots, A.ring, (int) A.ref_all);
+    std::printf("config: lean=%d kv=%s maxctx=%d nslots=%d ring=%d ref_all=%d\n", (int) A.lean, A.kv8 ? "fp8(full layers)" : (A.kv16 ? "fp16(full layers)" : "fp32"), A.maxctx, A.nslots, A.ring, (int) A.ref_all);
 
     if (A.layer_cmp > 0 && !A.prefill_file.empty()) {
         // layer-by-layer comparison of the residual stream: baseline forward_batch (B = 16, eager) vs forward_prefill (one chunk)
@@ -316,7 +316,7 @@ static int run_long(Engine & g, const LongArgs & A, cudaStream_t s) {
         for (int il = 0; il < NAPP; ++il)
             for (int sl = 0; sl < 1; ++sl) {
                 const bool swa = app_is_swa(il);
-                const size_t bytes = (swa ? (size_t) X.ring : (size_t) X.maxctx) * NKV * HD * ((swa || !X.kv16) ? 4 : 2);
+                const size_t bytes = (swa ? (size_t) X.ring : (size_t) X.maxctx) * NKV * HD * ((swa || !X.kv16) ? 4 : (X.kv8 ? 1 : 2));
                 CHECK(cudaMemset(X.kvs[il].k[sl], 0, bytes)); CHECK(cudaMemset(X.kvs[il].v[sl], 0, bytes));
             }
         reset_state(g);
@@ -352,7 +352,7 @@ static int run_long(Engine & g, const LongArgs & A, cudaStream_t s) {
         for (int il = 0; il < NAPP; ++il)
             for (int sl = 0; sl < X.nslots; ++sl) {
                 const bool swa = app_is_swa(il);
-                const size_t bytes = (swa ? (size_t) X.ring : (size_t) X.maxctx) * NKV * HD * ((swa || !X.kv16) ? 4 : 2);
+                const size_t bytes = (swa ? (size_t) X.ring : (size_t) X.maxctx) * NKV * HD * ((swa || !X.kv16) ? 4 : (X.kv8 ? 1 : 2));
                 CHECK(cudaMemset(X.kvs[il].k[sl], 0, bytes)); CHECK(cudaMemset(X.kvs[il].v[sl], 0, bytes));
             }
         reset_state(g);
@@ -411,7 +411,7 @@ static int run_long(Engine & g, const LongArgs & A, cudaStream_t s) {
         for (int il = 0; il < NAPP; ++il)
             for (int sl = 0; sl < 1; ++sl) {
                 const bool swa = app_is_swa(il);
-                const size_t bytes = (swa ? (size_t) X.ring : (size_t) X.maxctx) * NKV * HD * ((swa || !X.kv16) ? 4 : 2);
+                const size_t bytes = (swa ? (size_t) X.ring : (size_t) X.maxctx) * NKV * HD * ((swa || !X.kv16) ? 4 : (X.kv8 ? 1 : 2));
                 CHECK(cudaMemset(X.kvs[il].k[sl], 0, bytes)); CHECK(cudaMemset(X.kvs[il].v[sl], 0, bytes));
             }
         reset_state(g);

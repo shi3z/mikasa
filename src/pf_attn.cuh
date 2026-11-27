@@ -42,6 +42,7 @@ __device__ __forceinline__ uint32_t pf_pack(float a, float b) {
 template <typename KT> struct PfRaw;
 template <> struct PfRaw<float> { float4 a, b; };
 template <> struct PfRaw<__half> { uint4 u; };
+template <> struct PfRaw<fp8e4> { uint2 u; };
 __device__ __forceinline__ void pf_raw_load(PfRaw<float> & r, const float * p) {
     r.a = __ldg(reinterpret_cast<const float4 *>(p)); r.b = __ldg(reinterpret_cast<const float4 *>(p) + 1);
 }
@@ -50,6 +51,12 @@ __device__ __forceinline__ uint4 pf_raw_pack(const PfRaw<float> & r) {
     return make_uint4(pf_pack(r.a.x, r.a.y), pf_pack(r.a.z, r.a.w), pf_pack(r.b.x, r.b.y), pf_pack(r.b.z, r.b.w));
 }
 __device__ __forceinline__ uint4 pf_raw_pack(const PfRaw<__half> & r) { return r.u; }
+__device__ __forceinline__ void pf_raw_load(PfRaw<fp8e4> & r, const fp8e4 * p) { r.u = __ldg(reinterpret_cast<const uint2 *>(p)); }
+__device__ __forceinline__ uint4 pf_raw_pack(const PfRaw<fp8e4> & r) {
+    __half2 h[4];
+    fp8x4_to_h2(r.u.x, h[0], h[1]); fp8x4_to_h2(r.u.y, h[2], h[3]);
+    return make_uint4(*reinterpret_cast<uint32_t *>(&h[0]), *reinterpret_cast<uint32_t *>(&h[1]), *reinterpret_cast<uint32_t *>(&h[2]), *reinterpret_cast<uint32_t *>(&h[3]));
+}
 
 // grid (ceil(T/QT), NKV, PF_NSPLIT), block 32 * 3 * QT / 16
 template <typename KT, int QT>

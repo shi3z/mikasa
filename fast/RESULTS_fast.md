@@ -161,3 +161,38 @@ TIMEB_DIVERSE=1 ./mikasa_fast MODEL out --lean --kv16 --nslots 1 --maxctx 8192 -
 tools/nsys_prof.sh ./mikasa_fast TAG 16       # per-kernel table for one B
 ```
 New flags/env: `--time-b`, `TIMEB_ONLY`, `TIMEB_DIVERSE`, `MIKASA_Q8BT` (tile table), `MIKASA_NOFUSE` (old router path), `MIKASA_MOEFUSE`, `MIKASA_Q8MFULL`.
+
+## FP8 (E4M3) KV cache for the full-attention layers (`--kv8`, opt-in, not bit-exact)
+
+Full-attention K/V rows are stored as E4M3 bytes (SWA rings stay FP32). sm_86 has no FP8 conversion instructions: the store uses
+`__nv_cvt_float_to_fp8` (SATFINITE), the load decodes with `prmt` + shift + `hmul2 * 256` (exact E4M3 -> FP16, subnormals included).
+Decode `kb_attn_part`, the reference attention and the tensor-core prefill attention (`pf_attn_kernel`, FP8 -> FP16 into the smem tile)
+all take the new element type `fp8e4`. The default path (`--kv16`) is unchanged: logits and token files have the same MD5 as before.
+A global scale was not needed (V is RMS-normalised, K is norm-clipped).
+
+Speed (RTX A6000, B=1 CUDA graph, `--time-decode`, ms/step): ctx 300 10.11 -> 10.10, 8K 10.78 -> 10.64, 32K 11.93 -> 11.18,
+**65K 13.62 -> 12.19 (73 -> 82 tok/s)**. B=16 verify: unchanged to +0.4 ms (software decode cost). Prefill at 61K: 3,032 -> 2,993 tok/s (-1.3%).
+VRAM: -1.0 GB per 61K-token slot (-4 GB with 4 slots).
+
+Quality (teacher-forced on the FP16 greedy tokens, 128 steps, logits vs FP16):
+
+| test | KL(FP16 \|\| test) mean / max (nats) | top-1 agree |
+|---|---|---|
+| FP32 KV (reference of the FP16 rounding itself) | < 1e-4 | 128/128 |
+| FP8 K only (sim, FP16 storage rounded through E4M3) | 0.0033 / 0.050 | 126/128 |
+| FP8 V only (sim) | 0.0016 / 0.036 | 126/128 |
+| FP8 K+V, 16K context (real kernel, = sim 3 bit for bit) | 0.0026 / 0.075 | 128/128 |
+| FP8 K+V, 61K context | 0.0079 / 0.083 | 122/128 |
+
+Free-running greedy generation at 16K: 128/128 tokens identical to FP16; at 61K it diverges at token 1 (a near tie, the prompt is raw
+documentation text). Needle-in-a-haystack (30K and 60K, depth 0.1 / 0.5 / 0.9, thinking on, 400 tokens): 6/6 answer 7391 with FP8, 6/6 with
+FP16; 5 of the 6 outputs are token-identical including the reasoning. The relative L2 of the logits (0.18) is not a good metric: MoE routing
+flips make it saturate (FP32 vs FP16 already gives 0.027); use the KL.
+
+Daemon (`--serve --kv8`): `exact` tests (speculation on/off vs the single-sequence FP8 loop) 10/10 IDENTICAL, prefix-cache turns, branches,
+cancel, concurrency, sampling and the 65K limit pass. One difference: "resident continuation" (generated tokens are in the cache, written
+by the decode kernels; the uncached run re-writes them with the prefill kernels) diverges at token 64, because decode and prefill K/V differ in the last
+FP32 bits and E4M3 rounds that to a different byte more often than FP16 does. Cache hits are therefore not exactly reproducible against a recompute with `--kv8`.
+
+Verdict: -1.4 ms at 65K (-10%) and half the KV memory for a small, measurable distribution shift; it is not exact, so it is opt-in. 100 tok/s at 65K
+is still out of reach (12.2 ms). Experiment switch: `MIKASA_KV8SIM=1|2|3` (FP16 storage rounded through E4M3 for K / V / both).

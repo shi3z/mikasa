@@ -8,6 +8,7 @@
 #pragma once
 #include "batch_kernels2.cuh"
 #include <cuda_fp16.h>
+#include <cuda_fp8.h>
 
 constexpr int ATT_CH = 1024;                 // positions per split-KV chunk
 constexpr int SWA_CH = 128;                  // positions per chunk of the split SWA attention (window 1024 -> 8 chunks)
@@ -20,6 +21,37 @@ struct KVSlots { void * k[4]; void * v[4]; };   // per application: K / V base p
 __device__ __forceinline__ void kv_store(float * p, float v) { *p = v; }
 __device__ __forceinline__ float kv_round16(float v) { return __half2float(__float2half(v)); }
 __device__ __forceinline__ void kv_store(__half * p, float v) { *p = __float2half(v); }
+
+// FP8 (E4M3, no hardware conversion needed: sm_86 has none). Full-attention KV only. Stored value = x * 2^KV8_SH(K) (exact scaling).
+struct fp8e4 { uint8_t b; };
+__device__ __forceinline__ void kv_store(fp8e4 * p, float v) { p->b = (uint8_t) __nv_cvt_float_to_fp8(v, __NV_SATFINITE, __NV_E4M3); }
+// 4 E4M3 bytes -> 2 x half2 (exact): place the byte in the high half of a 16-bit lane, shift magnitude right by one, rebias with *256
+__device__ __forceinline__ void fp8x4_to_h2(uint32_t w, __half2 & lo, __half2 & hi) {
+    const uint32_t a = __byte_perm(w, 0, 0x1404), b = __byte_perm(w, 0, 0x3424);
+    const uint32_t ra = ((a & 0x7fff7fffu) >> 1) | (a & 0x80008000u), rb = ((b & 0x7fff7fffu) >> 1) | (b & 0x80008000u);
+    const __half2 k256 = __halves2half2(__ushort_as_half(0x5C00), __ushort_as_half(0x5C00));
+    lo = __hmul2(*reinterpret_cast<const __half2 *>(&ra), k256);
+    hi = __hmul2(*reinterpret_cast<const __half2 *>(&rb), k256);
+}
+__device__ __forceinline__ void kv_load8(const fp8e4 * p, float (&f)[8]) {
+    const uint2 u = __ldg(reinterpret_cast<const uint2 *>(p));
+    __half2 h[4];
+    fp8x4_to_h2(u.x, h[0], h[1]); fp8x4_to_h2(u.y, h[2], h[3]);
+#pragma unroll
+    for (int i = 0; i < 4; ++i) { const float2 t = __half22float2(h[i]); f[2 * i] = t.x; f[2 * i + 1] = t.y; }
+}
+__device__ int d_kv8sim = 0;     // experiment: FP16 storage, values rounded through E4M3 first (1 = K, 2 = V, 4 = K per-vector scaled, 8 = V per-vector scaled)
+__device__ __forceinline__ float kv_dec8(uint8_t q) {
+    const uint32_t a = (uint32_t) q << 8;
+    const uint32_t r = ((a & 0x7fffu) >> 1) | (a & 0x8000u);
+    return __half2float(__hmul(__ushort_as_half((unsigned short) r), __ushort_as_half(0x5C00)));
+}
+__device__ __forceinline__ float kv_r8(float v) { return kv_dec8((uint8_t) __nv_cvt_float_to_fp8(v, __NV_SATFINITE, __NV_E4M3)); }
+__device__ __forceinline__ float kv_load1(const fp8e4 * p) {
+    const uint32_t a = (uint32_t) __ldg(&p->b) << 8;
+    const uint32_t r = ((a & 0x7fffu) >> 1) | (a & 0x8000u);
+    return __half2float(__hmul(__ushort_as_half((unsigned short) r), __ushort_as_half(0x5C00)));
+}
 
 // 8 consecutive elements -> floats
 __device__ __forceinline__ void kv_load8(const float * p, float (&f)[8]) {
@@ -50,14 +82,14 @@ __global__ void kb_kv_write(const float * Kconv, const float * Vconv, float thr,
         float v = (d < dim) ? in[d] : 0.0f;
         const float ss = block_sum(d < dim ? v * v : 0.0f, red);
         const float f = fminf(1.0f, thr / (sqrtf(ss) + 1e-6f));
-        if (d < dim) kv_store(kc + row * NKVh * dim + b * dim + d, (rmask & 1) ? kv_round16(v * f) : v * f);   // rmask: experiment, FP32 storage of FP16-rounded values
+        if (d < dim) { float w = v * f; if (sizeof(KT) == 2 && (d_kv8sim & 1)) w = kv_r8(w); kv_store(kc + row * NKVh * dim + b * dim + d, (rmask & 1) ? kv_round16(w) : w); }   // rmask: experiment, FP32 storage of FP16-rounded values
     } else {
         KT * vc = (KT *) kv.v[sl];
         const int h = b - NKVh;
         const float v = (d < dim) ? Vconv[(size_t) bb * NKVh * dim + h * dim + d] : 0.0f;
         const float ss = block_sum(v * v, red);
         const float inv = rsqrtf(ss / dim + eps);
-        if (d < dim) kv_store(vc + row * NKVh * dim + h * dim + d, (rmask & 2) ? kv_round16(v * inv) : v * inv);
+        if (d < dim) { float w = v * inv; if (sizeof(KT) == 2 && (d_kv8sim & 2)) w = kv_r8(w); kv_store(vc + row * NKVh * dim + h * dim + d, (rmask & 2) ? kv_round16(w) : w); }
     }
 }
 

@@ -15,7 +15,7 @@ more for sampled output at temperature 1.0, whose length and content differ from
 | `tools/daemon_tests.py`, `http_tests.py`, `run_daemon_tests.sh`, `console_smoke.py`, `console_parallel.py` | tests |
 
 Build: `nvcc -O3 -std=c++17 -arch=sm_86 -I src -o mikasa_daemon src/inkling_model.cu src/gguf.cpp` (about 10 s).
-Run: `./mikasa_daemon MODEL /tmp/unused --serve --sock /tmp/mikasa.sock` (defaults: `--lean --kv16 --nslots 4 --maxctx 65536 --pf-fast 1024 --pf-chunk 1024 --spec 15 --spec-copy 4 --spec-m 1`, greedy-exact n-gram/copy speculation; `--spec-wide` is not used by the daemon).
+Run: `./mikasa_daemon MODEL /tmp/unused --serve --sock /tmp/mikasa.sock` (defaults: `--lean --kv16 --nslots 4 --maxctx 65536 --pf-fast 1024 --pf-chunk 1024 --spec 15 --spec-copy 4 --spec-m 1`, greedy-exact n-gram/copy speculation; `--spec-wide` is not used by the daemon). `--kv8` stores the full-attention KV as FP8 E4M3 (-1.4 ms/token at 65K, half the KV memory, not bit-exact; see `fast/RESULTS_fast.md`).
 Server: `python server/mikasa_server.py --port 8767 --engine daemon --launch-daemon --model MODEL --daemon-args "--snaps 24"` (the daemon is a child of the server: killed with it, `PR_SET_PDEATHSIG`).
 The server only binds its port after the daemon is ready, so `/health` = ready (model load + 8 s graph capture; 15 s in total with a warm page cache, cold-disk load time was not measured).
 

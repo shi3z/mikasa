@@ -707,7 +707,7 @@ static void daemon_sigterm(int) { if (!g_sock_path.empty()) unlink(g_sock_path.c
 static int run_serve(Engine & g, const LongArgs & A, cudaStream_t s) {
     print_mem("weights loaded");
     BatchState X; KVOpts ko;
-    ko.kv16 = A.kv16; ko.maxctx = A.maxctx; ko.nslots = A.nslots; ko.ring = std::max(A.ring, NSWA + A.pf_fast); ko.alias0 = false; ko.ref = false;
+    ko.kv16 = A.kv16; ko.kv8 = A.kv8; ko.maxctx = A.maxctx; ko.nslots = A.nslots; ko.ring = std::max(A.ring, NSWA + A.pf_fast); ko.alias0 = false; ko.ref = false;
     init_batch(g, X, ko);
     print_mem("after init_batch (KV + buffers)");
     PFState PF; init_pf(PF, A.pf_fast); g_moe_tb = 64;

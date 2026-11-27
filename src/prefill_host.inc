@@ -176,6 +176,8 @@ static void forward_prefill(Engine & g, BatchState & X, PFState & S, int T, int 
         kb_clip_qr<<<dim3(2 * NH, B), 128, 0, s>>>(S.Qv, P.q_clip, S.Qc, HD, QK_CLIP, S.R0, P.rel_clip, S.Rc, NREL, REL_CLIP, NH);
         if (swa || !X.kv16)
             pf_kv_write<float><<<(B * 16 + 7) / 8, 256, 0, s>>>(S.Kconv, S.Vconv, QK_CLIP, S.pos_arr, S.slot_arr, X.kvs[il], swa ? X.ring : 0, RMS_EPS, B);
+        else if (X.kv8)
+            pf_kv_write<fp8e4><<<(B * 16 + 7) / 8, 256, 0, s>>>(S.Kconv, S.Vconv, QK_CLIP, S.pos_arr, S.slot_arr, X.kvs[il], 0, RMS_EPS, B);
         else
             pf_kv_write<__half><<<(B * 16 + 7) / 8, 256, 0, s>>>(S.Kconv, S.Vconv, QK_CLIP, S.pos_arr, S.slot_arr, X.kvs[il], 0, RMS_EPS, B);
         if (!swa) {
@@ -186,6 +188,7 @@ static void forward_prefill(Engine & g, BatchState & X, PFState & S, int T, int 
         // ----- attention + output projection into the post-conv history rows
         if (swa)              pf_attention<float>(S.Qc, S.Rc, P.rel_bias, S.sinks, S.G, X.kvs[il], X.ring, NSWA, S.pos_arr, S.slot_arr, B, S.gatedh, s);
         else if (!X.kv16)     pf_attention<float>(S.Qc, S.Rc, P.rel_bias, S.sinks, S.G, X.kvs[il], 0, 0, S.pos_arr, S.slot_arr, B, S.gatedh, s);
+        else if (X.kv8)       pf_attention<fp8e4>(S.Qc, S.Rc, P.rel_bias, S.sinks, S.G, X.kvs[il], 0, 0, S.pos_arr, S.slot_arr, B, S.gatedh, s);
         else                  pf_attention<__half>(S.Qc, S.Rc, P.rel_bias, S.sinks, S.G, X.kvs[il], 0, 0, S.pos_arr, S.slot_arr, B, S.gatedh, s);
         {
             PFDense pd; pd.nseg = 0; pd.x = S.gatedh; pd.xstride = NH * HD; pd.T = B; pd.K = NH * HD;

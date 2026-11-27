@@ -583,6 +583,7 @@ int main(int argc, char ** argv) {
         else if (std::strcmp(argv[i], "--long") == 0) long_mode = true;
         else if (std::strcmp(argv[i], "--kv32") == 0) LA.kv16 = false;
         else if (std::strcmp(argv[i], "--kv16") == 0) LA.kv16 = true;
+        else if (std::strcmp(argv[i], "--kv8") == 0) { LA.kv16 = true; LA.kv8 = true; }
         else if (std::strcmp(argv[i], "--maxctx") == 0 && i + 1 < argc) LA.maxctx = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--nslots") == 0 && i + 1 < argc) LA.nslots = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--ring") == 0 && i + 1 < argc) LA.ring = std::atoi(argv[++i]);
@@ -624,6 +625,7 @@ int main(int argc, char ** argv) {
     if (!cmpa.empty()) return run_cmp_dump(cmpa, cmpb, cmpk);
     LA.lean = g_lean;
     if (const char * e = std::getenv("MIKASA_KVROUND")) g_kv_rmask = std::atoi(e);
+    if (const char * e = std::getenv("MIKASA_KV8SIM")) { int v = std::atoi(e); cudaMemcpyToSymbol(d_kv8sim, &v, sizeof v); }
     const int P = (int) toks.size();
     mkdir(outdir.c_str(), 0755);
     if (P + gen > MAXT) { std::fprintf(stderr, "prompt + gen exceeds MAXT\n"); return 1; }
